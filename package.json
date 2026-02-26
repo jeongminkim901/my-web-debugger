@@ -8,6 +8,7 @@
     "build:watch": "tsc -w",
     "copy:watch": "node scripts/watch-static.mjs",
     "dev": "node scripts/dev.mjs",
+    "build:public": "npm run build && node scripts/copy-public-viewer.mjs",
     "copy:static": "node scripts/copy-static.mjs",
     "test": "npm run build && npm run test:unit",
     "test:unit": "npm run build && vitest run tests/unit",
