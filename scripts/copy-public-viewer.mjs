@@ -18,3 +18,10 @@ for (const file of files) {
   }
   fs.copyFileSync(src, dest);
 }
+
+// Also publish viewer as root index.html for GitHub Pages.
+const viewerHtml = path.join(distDir, "viewer.html");
+const indexHtml = path.join(docsDir, "index.html");
+if (fs.existsSync(viewerHtml)) {
+  fs.copyFileSync(viewerHtml, indexHtml);
+}
