@@ -624,12 +624,21 @@
   // ---------- Auto load from extension ----------
   function decodeUrlPayload(payload) {
     try {
-      const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+      const raw = (() => {
+        try { return decodeURIComponent(payload); } catch { return payload; }
+      })();
+      const b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
       const padded = b64 + "===".slice((b64.length + 3) % 4);
       const binary = atob(padded);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      return new TextDecoder().decode(bytes);
+      try {
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+      } catch {
+        // Fallback for older browsers.
+        // eslint-disable-next-line no-undef
+        return decodeURIComponent(escape(binary));
+      }
     } catch {
       return null;
     }
@@ -640,7 +649,10 @@
     if (!hash.startsWith("#data=")) return false;
     const payload = hash.slice("#data=".length);
     const json = decodeUrlPayload(payload);
-    if (!json) return false;
+    if (!json) {
+      try { alert("Failed to decode URL data. Try the downloaded JSON file."); } catch {}
+      return false;
+    }
     try {
       session = JSON.parse(json);
       resetToggles();
@@ -649,6 +661,7 @@
       renderAll();
       return true;
     } catch {
+      try { alert("Invalid JSON in URL data. Try the downloaded JSON file."); } catch {}
       return false;
     }
   }
