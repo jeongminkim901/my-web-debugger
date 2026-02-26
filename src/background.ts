@@ -152,6 +152,17 @@ function buildExportData({ tabId, tab, data }) {
   };
 }
 
+function sanitizeFilename(name) {
+  const trimmed = String(name || "").trim();
+  const safe = trimmed
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!safe) return "unknown";
+  return safe.slice(0, 80);
+}
+
 function makeFilename(exportData) {
   const pad = (n) => String(n).padStart(2, "0");
   const d = new Date(exportData.createdAt || Date.now());
@@ -165,7 +176,7 @@ function makeFilename(exportData) {
 
   const host = (() => {
     try {
-      return new URL(exportData.page?.url || "").host.replaceAll(".", "_");
+      return sanitizeFilename(new URL(exportData.page?.url || "").host.replaceAll(".", "_"));
     } catch {
       return "unknown";
     }
