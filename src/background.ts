@@ -7,6 +7,7 @@ let sessionEndedAt = null;
 // Public viewer (GitHub Pages) for sharing.
 const PUBLIC_VIEWER_URL = "https://jeongminkim901.github.io/my-web-debugger/";
 const PUBLIC_VIEWER_MAX_INLINE_BYTES = 700_000; // keep URL reasonably short
+const SCREENSHOT_MAX_INLINE_BYTES = 200_000;
 
 // tabId -> { console: [], network: [], requests: Map() }
 const store = new Map();
@@ -16,6 +17,34 @@ function ensure(tabId) {
     store.set(tabId, { console: [], network: [], requests: new Map() });
   }
   return store.get(tabId);
+}
+
+async function saveMeta(tabId, meta) {
+  const key = `meta:${tabId}`;
+  try {
+    if (chrome.storage?.session) {
+      await chrome.storage.session.set({ [key]: meta });
+      return true;
+    }
+    await chrome.storage.local.set({ [key]: meta });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadMeta(tabId) {
+  const key = `meta:${tabId}`;
+  try {
+    if (chrome.storage?.session) {
+      const res = await chrome.storage.session.get(key);
+      return res?.[key] || null;
+    }
+    const res = await chrome.storage.local.get(key);
+    return res?.[key] || null;
+  } catch {
+    return null;
+  }
 }
 
 // ✅ URL 마스킹
@@ -41,6 +70,44 @@ function maskUrl(rawUrl) {
   } catch {
     return rawUrl;
   }
+}
+
+function maskSensitiveValue(value) {
+  const SENSITIVE_KEYS = [
+    "token","access_token","refresh_token","id_token",
+    "auth","authorization",
+    "apikey","api_key","key",
+    "secret","password","pass",
+    "session","sessionid","sid"
+  ];
+
+  if (value === null || value === undefined) return value;
+
+  if (typeof value === "string") {
+    let s = value;
+    for (const k of SENSITIVE_KEYS) {
+      const re = new RegExp(`(${k}\\s*[:=]\\s*)([^\\s&]+)`, "ig");
+      s = s.replace(re, "$1***");
+    }
+    return s;
+  }
+
+  if (Array.isArray(value)) return value.map(maskSensitiveValue);
+
+  if (typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      const key = String(k).toLowerCase();
+      if (SENSITIVE_KEYS.includes(key) || key.includes("token") || key.includes("secret")) {
+        out[k] = "***";
+      } else {
+        out[k] = maskSensitiveValue(v);
+      }
+    }
+    return out;
+  }
+
+  return value;
 }
 
 // ✅ network 정규화
@@ -83,10 +150,10 @@ function normalizeNetworkItem(item) {
 
     // page hook 전용(있으면 viewer Raw에서 확인 가능)
     transport: item.transport || null,
-    requestBody: item.requestBody ?? null,
-    responseBody: item.responseBody ?? null,
+    requestBody: maskSensitiveValue(item.requestBody ?? null),
+    responseBody: maskSensitiveValue(item.responseBody ?? null),
     ok: item.ok ?? null,
-    error: item.error ?? null,
+    error: maskSensitiveValue(item.error ?? null),
     pageUrl: item.pageUrl ?? null
   };
 }
@@ -120,7 +187,7 @@ function buildSummary(networkItems) {
   return { totalRequests, byStatusGroup, byHost, slowestTop5 };
 }
 
-function buildExportData({ tabId, tab, data }) {
+function buildExportData({ tabId, tab, data, meta, screenshot }) {
   const normalizedNetwork = data.network.map(normalizeNetworkItem);
   const summary = buildSummary(normalizedNetwork);
 
@@ -147,6 +214,8 @@ function buildExportData({ tabId, tab, data }) {
       title: tab?.title || null
     },
     session,
+    meta: meta || null,
+    screenshot: screenshot || null,
     summary,
     console: data.console,
     network: normalizedNetwork
@@ -200,6 +269,27 @@ function encodeForUrlPayload(text) {
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+async function captureScreenshot(tab) {
+  try {
+    if (!tab?.windowId) return null;
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    if (typeof dataUrl !== "string") return null;
+    return dataUrl;
+  } catch {
+    return null;
+  }
+}
+
+function isInlineSafe(text, screenshot) {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length > PUBLIC_VIEWER_MAX_INLINE_BYTES) return false;
+  if (screenshot) {
+    const sBytes = new TextEncoder().encode(screenshot);
+    if (sBytes.length > SCREENSHOT_MAX_INLINE_BYTES) return false;
+  }
+  return true;
+}
+
 async function saveExportToSession(tabId, exportData) {
   const key = `lastExport:${tabId}`;
   try {
@@ -251,6 +341,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     recording = false;
     sessionEndedAt = Date.now();
     sendResponse({ ok: true });
+    return true;
+  }
+
+  if (msg.type === "SET_META") {
+    (async () => {
+      const tabId = msg.tabId;
+      const meta = msg.meta || null;
+      const ok = tabId ? await saveMeta(tabId, meta) : false;
+      sendResponse({ ok: !!ok });
+    })();
     return true;
   }
 
@@ -314,9 +414,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "EXPORT") {
     const tabId = msg.tabId;
 
-    chrome.tabs.get(tabId, (tab) => {
+    chrome.tabs.get(tabId, async (tab) => {
       const data = store.get(tabId) || { console: [], network: [], requests: new Map() };
-      const exportData = buildExportData({ tabId, tab, data });
+      const meta = await loadMeta(tabId);
+      const screenshot = await captureScreenshot(tab);
+      const exportData = buildExportData({ tabId, tab, data, meta, screenshot });
 
       const json = JSON.stringify(exportData, null, 2);
       const filename = makeFilename(exportData);
@@ -344,12 +446,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       chrome.tabs.get(tabId, async (tab) => {
         const data = store.get(tabId) || { console: [], network: [], requests: new Map() };
-        const exportData = buildExportData({ tabId, tab, data });
+        const meta = await loadMeta(tabId);
+        const screenshot = await captureScreenshot(tab);
+        const exportData = buildExportData({ tabId, tab, data, meta, screenshot });
 
         const json = JSON.stringify(exportData, null, 2);
-        const bytes = new TextEncoder().encode(json);
+        const inlineSafe = isInlineSafe(json, exportData.screenshot);
 
-        if (bytes.length <= PUBLIC_VIEWER_MAX_INLINE_BYTES) {
+        if (inlineSafe) {
           const payload = encodeForUrlPayload(json);
           const viewerUrl = `${PUBLIC_VIEWER_URL}#data=${payload}`;
           chrome.tabs.create({ url: viewerUrl }, () => {

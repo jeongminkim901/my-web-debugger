@@ -7,10 +7,20 @@
     const content = el("content");
     // Controls
     const netSearch = el("netSearch");
+    const hostFilter = el("hostFilter");
     const statusFilter = el("statusFilter");
+    const methodFilter = el("methodFilter");
     const sortBy = el("sortBy");
+    const durMin = el("durMin");
+    const durMax = el("durMax");
     const conSearch = el("conSearch");
     const levelFilter = el("levelFilter");
+    // Meta / extra
+    const metaNote = el("metaNote");
+    const metaTags = el("metaTags");
+    const errorSummaryEl = el("errorSummary");
+    const timelineEl = el("timeline");
+    const screenshotWrap = el("screenshotWrap");
     // Toggles
     const SLOW_THRESHOLD_MS = 1000;
     // ✅ 너무 넓게 걸리는 문제 해결: 기본 3초 → 1.2초
@@ -83,7 +93,7 @@
         }
     }
     // Re-render on control changes
-    [netSearch, statusFilter, sortBy, conSearch, levelFilter].forEach(ctrl => {
+    [netSearch, hostFilter, statusFilter, methodFilter, sortBy, durMin, durMax, conSearch, levelFilter].forEach(ctrl => {
         ctrl.addEventListener("input", () => { renderTables(); });
         ctrl.addEventListener("change", () => { renderTables(); });
     });
@@ -196,6 +206,11 @@
       <span class="pill">${sessionText}</span>
       <span class="pill muted">Tip: 행 클릭=상호 하이라이트(±${HILITE_WINDOW_MS}ms, same-origin) · ESC 해제</span>
     `;
+        const meta = session.meta || {};
+        if (metaNote)
+            metaNote.textContent = meta.note || "-";
+        if (metaTags)
+            metaTags.textContent = Array.isArray(meta.tags) ? meta.tags.join(", ") : (meta.tags || "-");
         const s = session.summary || {};
         const total = s.totalRequests ?? (session.network?.length || 0);
         const by = s.byStatusGroup || {};
@@ -228,12 +243,72 @@
         el("hosts").innerHTML = hosts || `<div class="muted">데이터 없음</div>`;
         el("raw").textContent = JSON.stringify(session, null, 2);
         renderTables();
+        renderErrorSummary();
+        renderTimeline();
+        renderScreenshot();
     }
     function renderTables() {
         if (!session)
             return;
         renderNetworkTable();
         renderConsoleTable();
+    }
+    function renderErrorSummary() {
+        if (!session || !errorSummaryEl)
+            return;
+        const net = Array.isArray(session.network) ? session.network : [];
+        const con = Array.isArray(session.console) ? session.console : [];
+        const net4xx = net.filter((x) => x.statusGroup === "4xx").length;
+        const net5xx = net.filter((x) => x.statusGroup === "5xx").length;
+        const conErr = con.filter((x) => x.level === "error").length;
+        const conWarn = con.filter((x) => x.level === "warn").length;
+        errorSummaryEl.innerHTML = `
+      <div class="row">
+        <span class="pill">Network 4xx: ${escapeHtml(String(net4xx))}</span>
+        <span class="pill">Network 5xx: ${escapeHtml(String(net5xx))}</span>
+        <span class="pill">Console error: ${escapeHtml(String(conErr))}</span>
+        <span class="pill">Console warn: ${escapeHtml(String(conWarn))}</span>
+      </div>
+    `;
+    }
+    function renderTimeline() {
+        if (!session || !timelineEl)
+            return;
+        const items = Array.isArray(session.network) ? session.network : [];
+        const withTimes = items.filter((x) => typeof x.startedAt === "number");
+        if (!withTimes.length) {
+            timelineEl.innerHTML = `<div class="muted" style="padding:10px;">No timeline data</div>`;
+            return;
+        }
+        const minT = Math.min(...withTimes.map((x) => x.startedAt ?? 0));
+        const maxT = Math.max(...withTimes.map((x) => (x.endedAt ?? x.startedAt ?? 0)));
+        const range = Math.max(1, maxT - minT);
+        timelineEl.innerHTML = "";
+        withTimes.slice(0, 60).forEach((x, i) => {
+            const s = x.startedAt ?? minT;
+            const e = x.endedAt ?? s;
+            const left = ((s - minT) / range) * 100;
+            const width = Math.max(1, ((e - s) / range) * 100);
+            const bar = document.createElement("div");
+            const code = x.statusCode;
+            bar.className = "timeline-bar" + ((typeof code === "number" && code >= 400) ? " err" : (x.durationMs >= SLOW_THRESHOLD_MS ? " warn" : ""));
+            bar.style.left = `${left}%`;
+            bar.style.width = `${width}%`;
+            bar.style.top = `${(i % 7) * 20 + 6}px`;
+            bar.title = `${x.method || ""} ${x.shortUrl || x.url || ""}`;
+            bar.textContent = `${x.method || "-"} ${x.statusCode ?? "-"}`;
+            timelineEl.appendChild(bar);
+        });
+    }
+    function renderScreenshot() {
+        if (!session || !screenshotWrap)
+            return;
+        const s = session.screenshot;
+        if (!s) {
+            screenshotWrap.textContent = "No screenshot";
+            return;
+        }
+        screenshotWrap.innerHTML = `<img src="${escapeHtml(s)}" style="max-width:100%; border:1px solid #1f2a3a; border-radius:10px;" />`;
     }
     // ---------- Helpers (origin & time window) ----------
     function getOrigin(url) {
@@ -322,18 +397,28 @@
     function renderNetworkTable() {
         const items = Array.isArray(session.network) ? session.network : [];
         const q = (netSearch.value || "").trim().toLowerCase();
+        const hostQ = (hostFilter.value || "").trim().toLowerCase();
         const status = statusFilter.value;
+        const method = methodFilter.value;
+        const minMs = Number((durMin.value || "").trim());
+        const maxMs = Number((durMax.value || "").trim());
         let filtered = items.filter(x => {
             const hay = `${x.host || ""} ${x.path || ""} ${x.url || ""}`.toLowerCase();
             const okQuery = q ? hay.includes(q) : true;
             const okStatus = (status === "all") ? true : (String(x.statusGroup || "unknown") === status);
+            const okHost = hostQ ? String(x.host || "").toLowerCase().includes(hostQ) : true;
+            const okMethod = (method === "all") ? true : String(x.method || "").toUpperCase() === method;
             const okNetErrors = netErrorsOnly
                 ? (x.statusGroup === "4xx" || x.statusGroup === "5xx" || (typeof x.statusCode === "number" && x.statusCode >= 400))
                 : true;
-            return okQuery && okStatus && okNetErrors;
+            return okQuery && okStatus && okHost && okMethod && okNetErrors;
         });
         if (slowOnly)
             filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs >= SLOW_THRESHOLD_MS);
+        if (!Number.isNaN(minMs))
+            filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs >= minMs);
+        if (!Number.isNaN(maxMs))
+            filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs <= maxMs);
         const sort = sortBy.value;
         filtered.sort((a, b) => {
             const aT = a.startedAt ?? 0;

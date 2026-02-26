@@ -1,10 +1,21 @@
-<!doctype html>
+﻿<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <style>
-      body { font-family: sans-serif; width: 240px; padding: 12px; }
+      body { font-family: sans-serif; width: 260px; padding: 12px; }
       button { width: 100%; margin: 6px 0; padding: 10px; cursor: pointer; }
+      input, textarea {
+        width: 100%;
+        margin: 6px 0;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 12px;
+        box-sizing: border-box;
+      }
+      textarea { resize: vertical; min-height: 60px; }
       #recBadge {
         display:inline-block;
         padding:4px 10px;
@@ -17,13 +28,16 @@
     </style>
   </head>
   <body>
-    <div id="recBadge">● OFF</div>
+    <div id="recBadge">OFF</div>
 
     <button id="start">Start Recording</button>
     <button id="stop">Stop Recording</button>
 
-    <button id="openViewer">Open Viewer (바로 보기)</button>
-    <button id="export">Export JSON (파일 저장)</button>
+    <button id="openViewer">Open Viewer (Share)</button>
+    <button id="export">Export JSON</button>
+
+    <textarea id="note" placeholder="Session note (optional)"></textarea>
+    <input id="tags" placeholder="Tags (comma separated)" />
 
     <div id="status"></div>
     <script src="popup.js"></script>

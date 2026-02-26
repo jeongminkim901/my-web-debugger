@@ -1,5 +1,5 @@
-<!doctype html>
-<html lang="ko">
+﻿<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -17,7 +17,7 @@
     .kpi { min-width: 160px; }
     .kpi .v { font-size: 22px; font-weight: 700; margin-top: 6px; }
     input, select { background:#0f1622; border:1px solid #2a3a52; color:#e6edf3; border-radius: 10px; padding:10px; outline:none; }
-    input { width: 340px; max-width: 100%; }
+    input { width: 200px; max-width: 100%; }
     button { background: transparent; border: none; color: inherit; }
     .btn { cursor:pointer; user-select:none; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; overflow:hidden; border-radius: 12px; }
@@ -36,27 +36,11 @@
     a:hover { text-decoration: underline; }
     .hidden { display:none; }
 
-    /* ✅ Network 강조 */
-    .row-error td {
-      background: rgba(239, 68, 68, 0.16);
-      border-bottom-color: rgba(239, 68, 68, 0.30);
-    }
-    .row-warn td {
-      background: rgba(245, 158, 11, 0.14);
-      border-bottom-color: rgba(245, 158, 11, 0.26);
-    }
+    .row-error td { background: rgba(239, 68, 68, 0.16); border-bottom-color: rgba(239, 68, 68, 0.30); }
+    .row-warn td { background: rgba(245, 158, 11, 0.14); border-bottom-color: rgba(245, 158, 11, 0.26); }
+    .row-con-error td { background: rgba(239, 68, 68, 0.16); border-bottom-color: rgba(239, 68, 68, 0.30); }
+    .row-con-warn td { background: rgba(245, 158, 11, 0.14); border-bottom-color: rgba(245, 158, 11, 0.26); }
 
-    /* ✅ Console 강조 */
-    .row-con-error td {
-      background: rgba(239, 68, 68, 0.16);
-      border-bottom-color: rgba(239, 68, 68, 0.30);
-    }
-    .row-con-warn td {
-      background: rgba(245, 158, 11, 0.14);
-      border-bottom-color: rgba(245, 158, 11, 0.26);
-    }
-
-    /* ✅ 레벨 pill */
     .pill-level { border-color: rgba(148, 163, 184, 0.35); }
     .lvl-error { border-color: rgba(239, 68, 68, 0.65); color: rgba(239, 68, 68, 0.95); }
     .lvl-warn  { border-color: rgba(245, 158, 11, 0.65); color: rgba(245, 158, 11, 0.95); }
@@ -64,17 +48,14 @@
     .lvl-log   { border-color: rgba(148, 163, 184, 0.55); color: rgba(226, 232, 240, 0.90); }
     .lvl-debug { border-color: rgba(16, 185, 129, 0.60); color: rgba(110, 231, 183, 0.95); }
 
-    /* ✅ 토글 버튼(ON) */
     .toggle-on {
       border-color: rgba(125, 211, 252, 0.55);
       color: rgba(125, 211, 252, 0.95);
       box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.12) inset;
     }
 
-    /* ✅ (NEW) 클릭 가능 표시 */
     tr[data-net-id] { cursor: pointer; }
 
-    /* ✅ (NEW) 상세 패널 */
     .detail {
       margin-top: 12px;
       background:#0f1622;
@@ -99,25 +80,44 @@
       border-radius: 999px;
       padding: 2px 10px;
     }
+
+    .timeline { position: relative; height: 140px; background: #0f1622; border: 1px solid #1f2a3a; border-radius: 12px; overflow: hidden; }
+    .timeline-bar { position: absolute; height: 18px; border-radius: 6px; background: rgba(125, 211, 252, 0.35); border: 1px solid rgba(125, 211, 252, 0.6); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 6px; font-size: 11px; line-height: 18px; color: #e6edf3; }
+    .timeline-bar.err { background: rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.6); }
+    .timeline-bar.warn { background: rgba(245, 158, 11, 0.20); border-color: rgba(245, 158, 11, 0.6); }
+
+    .meta-box { background:#0f1622; border:1px solid #1f2a3a; border-radius: 12px; padding: 10px; }
+    .meta-box .label { font-size: 12px; color:#9aa4b2; }
+    .meta-box .value { font-size: 13px; margin-top: 4px; }
   </style>
 </head>
 
 <body>
   <h1>Debug Session Viewer</h1>
   <div class="row muted" id="meta"></div>
+  <div class="row">
+    <div class="meta-box" style="flex:1 1 320px;">
+      <div class="label">Note</div>
+      <div class="value" id="metaNote">-</div>
+    </div>
+    <div class="meta-box" style="flex:1 1 320px;">
+      <div class="label">Tags</div>
+      <div class="value" id="metaTags">-</div>
+    </div>
+  </div>
 
   <div class="drop card" id="drop">
     <div class="row">
       <div>
-        <div><b>JSON 파일 드래그앤드롭</b></div>
+        <div><b>Drag & drop JSON</b></div>
         <div class="muted">
-          확장 프로그램에서 Export한 JSON을 여기에 놓으면 자동으로 렌더링됩니다.<br/>
-          <span class="muted">(또는 확장에서 “Open Viewer”로 바로 열 수도 있어요)</span>
+          Exported JSON renders automatically here.<br/>
+          <span class="muted">Or use "Open Viewer" in the extension.</span>
         </div>
       </div>
       <div class="right">
         <label class="pill btn">
-          파일 선택
+          Select file
           <input id="file" type="file" accept="application/json" style="display:none" />
         </label>
       </div>
@@ -131,6 +131,12 @@
     <div class="grid2">
       <div class="card">
         <div class="row">
+          <div><b>Error Summary</b></div>
+        </div>
+        <div id="errorSummary"></div>
+      </div>
+      <div class="card">
+        <div class="row">
           <div><b>Slowest Top 5</b></div>
         </div>
         <div id="slowest"></div>
@@ -139,7 +145,7 @@
       <div class="card">
         <div class="row">
           <div><b>Hosts</b></div>
-          <div class="muted right">요청 수 기준</div>
+          <div class="muted right">request count</div>
         </div>
         <div id="hosts"></div>
       </div>
@@ -147,38 +153,53 @@
 
     <h2>Network</h2>
     <div class="row card">
-      <input id="netSearch" placeholder="검색: host / path / url" />
+      <input id="netSearch" placeholder="search host / path / url" />
+      <input id="hostFilter" placeholder="host filter" />
       <select id="statusFilter">
-        <option value="all">상태: 전체</option>
+        <option value="all">status: all</option>
         <option value="2xx">2xx</option>
         <option value="3xx">3xx</option>
         <option value="4xx">4xx</option>
         <option value="5xx">5xx</option>
         <option value="unknown">unknown</option>
       </select>
-      <select id="sortBy">
-        <option value="time_desc">정렬: 최신 시작</option>
-        <option value="time_asc">정렬: 오래된 시작</option>
-        <option value="dur_desc">정렬: 느린 순</option>
-        <option value="dur_asc">정렬: 빠른 순</option>
+      <select id="methodFilter">
+        <option value="all">method: all</option>
+        <option value="GET">GET</option>
+        <option value="POST">POST</option>
+        <option value="PUT">PUT</option>
+        <option value="PATCH">PATCH</option>
+        <option value="DELETE">DELETE</option>
       </select>
+      <select id="sortBy">
+        <option value="time_desc">sort: latest start</option>
+        <option value="time_asc">sort: oldest start</option>
+        <option value="dur_desc">sort: slow first</option>
+        <option value="dur_asc">sort: fast first</option>
+      </select>
+      <input id="durMin" placeholder="min ms" />
+      <input id="durMax" placeholder="max ms" />
 
-      <button id="toggleSlow" class="pill btn" type="button" title="duration이 긴 요청만 보기">Slow only: OFF</button>
-      <button id="toggleNetErrors" class="pill btn" type="button" title="4xx/5xx만 보기">Errors only: OFF</button>
+      <button id="toggleSlow" class="pill btn" type="button" title="only show slow requests">Slow only: OFF</button>
+      <button id="toggleNetErrors" class="pill btn" type="button" title="only show 4xx/5xx">Errors only: OFF</button>
 
       <span class="right muted" id="netCount"></span>
     </div>
 
     <div id="network"></div>
 
-    <!-- ✅ (NEW) Network 상세 패널 -->
     <div id="netDetail" class="detail hidden"></div>
+
+    <h2>Timeline</h2>
+    <div class="card">
+      <div class="timeline" id="timeline"></div>
+    </div>
 
     <h2>Console</h2>
     <div class="row card">
-      <input id="conSearch" placeholder="검색: message" />
+      <input id="conSearch" placeholder="search message" />
       <select id="levelFilter">
-        <option value="all">레벨: 전체</option>
+        <option value="all">level: all</option>
         <option value="error">error</option>
         <option value="warn">warn</option>
         <option value="info">info</option>
@@ -186,15 +207,20 @@
         <option value="debug">debug</option>
       </select>
 
-      <button id="toggleConErrors" class="pill btn" type="button" title="warn/error만 보기">Warn+Error: OFF</button>
+      <button id="toggleConErrors" class="pill btn" type="button" title="warn/error only">Warn+Error: OFF</button>
 
       <span class="right muted" id="conCount"></span>
     </div>
     <div id="console"></div>
 
     <details class="card">
-      <summary><b>Raw JSON</b> <span class="muted">(원본 데이터 보기)</span></summary>
+      <summary><b>Raw JSON</b> <span class="muted">(original data)</span></summary>
       <pre id="raw" class="mono small" style="white-space: pre-wrap; word-break: break-word;"></pre>
+    </details>
+
+    <details class="card">
+      <summary><b>Screenshot</b> <span class="muted">(captured at Open Viewer)</span></summary>
+      <div id="screenshotWrap" class="muted">No screenshot</div>
     </details>
   </div>
 

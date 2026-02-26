@@ -15,8 +15,12 @@ function createViewerDom() {
         <input id="file" />
         <div id="content"></div>
         <input id="netSearch" />
+        <input id="hostFilter" />
         <select id="statusFilter"></select>
+        <select id="methodFilter"></select>
         <select id="sortBy"></select>
+        <input id="durMin" />
+        <input id="durMax" />
         <input id="conSearch" />
         <select id="levelFilter"></select>
         <button id="toggleSlow"></button>
@@ -24,12 +28,17 @@ function createViewerDom() {
         <button id="toggleConErrors"></button>
         <div id="netDetail"></div>
         <div id="network"></div>
+        <div id="timeline"></div>
         <div id="console"></div>
         <div id="meta"></div>
+        <div id="metaNote"></div>
+        <div id="metaTags"></div>
         <div id="kpis"></div>
+        <div id="errorSummary"></div>
         <div id="slowest"></div>
         <div id="hosts"></div>
         <pre id="raw"></pre>
+        <div id="screenshotWrap"></div>
         <span id="netCount"></span>
         <span id="conCount"></span>
       </body>
