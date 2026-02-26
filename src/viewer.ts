@@ -622,6 +622,37 @@
   }
 
   // ---------- Auto load from extension ----------
+  function decodeUrlPayload(payload) {
+    try {
+      const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = b64 + "===".slice((b64.length + 3) % 4);
+      const binary = atob(padded);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  function loadFromHashIfPossible() {
+    const hash = location.hash || "";
+    if (!hash.startsWith("#data=")) return false;
+    const payload = hash.slice("#data=".length);
+    const json = decodeUrlPayload(payload);
+    if (!json) return false;
+    try {
+      session = JSON.parse(json);
+      resetToggles();
+      clearNetDetail();
+      clearHilite();
+      renderAll();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function autoLoadFromExtensionIfPossible() {
     const qs = new URLSearchParams(location.search);
     const tabIdRaw = qs.get("tabId");
@@ -658,4 +689,5 @@
   }
 
   autoLoadFromExtensionIfPossible();
+  loadFromHashIfPossible();
 })();

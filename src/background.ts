@@ -6,6 +6,7 @@ let sessionEndedAt = null;
 
 // Public viewer (GitHub Pages) for sharing.
 const PUBLIC_VIEWER_URL = "https://jeongminkim901.github.io/my-web-debugger/";
+const PUBLIC_VIEWER_MAX_INLINE_BYTES = 700_000; // keep URL reasonably short
 
 // tabId -> { console: [], network: [], requests: Map() }
 const store = new Map();
@@ -185,6 +186,20 @@ function makeFilename(exportData) {
   return `debug-session_${host}_${yyyy}${mm}${dd}_${hh}${mi}${ss}.json`;
 }
 
+function base64FromBytes(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function encodeForUrlPayload(text) {
+  const bytes = new TextEncoder().encode(text);
+  const b64 = base64FromBytes(bytes);
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 async function saveExportToSession(tabId, exportData) {
   const key = `lastExport:${tabId}`;
   try {
@@ -331,8 +346,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const data = store.get(tabId) || { console: [], network: [], requests: new Map() };
         const exportData = buildExportData({ tabId, tab, data });
 
-        // Download JSON so it can be uploaded to the public viewer.
         const json = JSON.stringify(exportData, null, 2);
+        const bytes = new TextEncoder().encode(json);
+
+        if (bytes.length <= PUBLIC_VIEWER_MAX_INLINE_BYTES) {
+          const payload = encodeForUrlPayload(json);
+          const viewerUrl = `${PUBLIC_VIEWER_URL}#data=${payload}`;
+          chrome.tabs.create({ url: viewerUrl }, () => {
+            sendResponse({ ok: true, public: true, inline: true });
+          });
+          return;
+        }
+
+        // Fallback: download JSON for large payloads.
         const filename = makeFilename(exportData);
         const dataUrl = "data:application/json;charset=utf-8," + encodeURIComponent(json);
 
@@ -346,7 +372,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
             const viewerUrl = `${PUBLIC_VIEWER_URL}?t=${Date.now()}`;
             chrome.tabs.create({ url: viewerUrl }, () => {
-              sendResponse({ ok: true, downloadId, filename, public: true });
+              sendResponse({ ok: true, downloadId, filename, public: true, inline: false });
             });
           }
         );
