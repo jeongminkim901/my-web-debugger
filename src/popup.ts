@@ -1,4 +1,4 @@
-// popup.js
+﻿// popup.ts
 const statusEl = document.getElementById("status");
 const badgeEl = document.getElementById("recBadge");
 
@@ -12,11 +12,11 @@ function setStatus(text) {
 
 function setBadge(isOn) {
   if (isOn) {
-    badgeEl.textContent = "● REC";
+    badgeEl.textContent = "REC";
     badgeEl.style.borderColor = "#16a34a";
     badgeEl.style.color = "#16a34a";
   } else {
-    badgeEl.textContent = "● OFF";
+    badgeEl.textContent = "OFF";
     badgeEl.style.borderColor = "#ccc";
     badgeEl.style.color = "#666";
   }
@@ -27,21 +27,21 @@ async function getCurrentTabId() {
   return tab?.id;
 }
 
-// ✅ popup 열릴 때 recording 상태 반영
+// popup status sync
 chrome.runtime.sendMessage({ type: "GET_STATUS" }, (res) => {
   if (res?.ok) setBadge(!!res.recording);
 });
 
 document.getElementById("start").onclick = async () => {
   const tabId = await getCurrentTabId();
-  if (!tabId) return setStatus("⚠️ 현재 탭을 찾을 수 없어요");
+  if (!tabId) return setStatus("Could not find current tab.");
 
   chrome.runtime.sendMessage({ type: "START", tabId }, (res) => {
     if (res?.ok) {
       setBadge(true);
-      setStatus(`✅ Recording started (cleared tab ${res.clearedTabId})`);
+      setStatus(`Recording started (cleared tab ${res.clearedTabId})`);
     } else {
-      setStatus("❌ Failed to start recording");
+      setStatus("Failed to start recording");
     }
   });
 };
@@ -50,31 +50,33 @@ document.getElementById("stop").onclick = async () => {
   chrome.runtime.sendMessage({ type: "STOP" }, (res) => {
     if (res?.ok) {
       setBadge(false);
-      setStatus("⏸ Recording stopped");
+      setStatus("Recording stopped");
     } else {
-      setStatus("❌ Failed to stop recording");
+      setStatus("Failed to stop recording");
     }
   });
 };
 
-// ✅ (NEW) 바로 Viewer 열기
+// Open public viewer
+// Downloads JSON and opens the public viewer page.
 document.getElementById("openViewer").onclick = async () => {
   const tabId = await getCurrentTabId();
-  if (!tabId) return setStatus("⚠️ 현재 탭을 찾을 수 없어요");
+  if (!tabId) return setStatus("Could not find current tab.");
 
   chrome.runtime.sendMessage({ type: "OPEN_VIEWER", tabId }, (res) => {
-    if (res?.ok) setStatus("👀 Viewer opened!");
-    else setStatus(`❌ Open Viewer failed: ${res?.error || "unknown"}`);
+    if (res?.ok) setStatus("Public Viewer opened. Upload the downloaded JSON.");
+    else setStatus(`Open Viewer failed: ${res?.error || "unknown"}`);
   });
 };
 
-// ✅ 기존 파일 저장 Export
+// Export JSON
+// Download only.
 document.getElementById("export").onclick = async () => {
   const tabId = await getCurrentTabId();
-  if (!tabId) return setStatus("⚠️ Export할 탭이 없어요");
+  if (!tabId) return setStatus("No active tab to export.");
 
   chrome.runtime.sendMessage({ type: "EXPORT", tabId }, (res) => {
-    if (res?.ok) setStatus("📦 Export downloaded!");
-    else setStatus(`❌ Export failed: ${res?.error || "unknown"}`);
+    if (res?.ok) setStatus("Export downloaded!");
+    else setStatus(`Export failed: ${res?.error || "unknown"}`);
   });
 };

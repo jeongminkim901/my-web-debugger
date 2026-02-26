@@ -4,6 +4,9 @@ let recording = false;
 let sessionStartedAt = null;
 let sessionEndedAt = null;
 
+// Public viewer (GitHub Pages) for sharing.
+const PUBLIC_VIEWER_URL = "https://jeongminkim901.github.io/my-web-debugger/";
+
 // tabId -> { console: [], network: [], requests: Map() }
 const store = new Map();
 
@@ -317,14 +320,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const data = store.get(tabId) || { console: [], network: [], requests: new Map() };
         const exportData = buildExportData({ tabId, tab, data });
 
-        const ok = await saveExportToSession(tabId, exportData);
-        if (!ok) {
-          sendResponse({ ok: false, error: "failed_to_cache_export" });
-          return;
-        }
+        // Download JSON so it can be uploaded to the public viewer.
+        const json = JSON.stringify(exportData, null, 2);
+        const filename = makeFilename(exportData);
+        const dataUrl = "data:application/json;charset=utf-8," + encodeURIComponent(json);
 
-        const viewerUrl = chrome.runtime.getURL(`dist/viewer.html?tabId=${tabId}&t=${Date.now()}`);
-        chrome.tabs.create({ url: viewerUrl }, () => sendResponse({ ok: true }));
+        chrome.downloads.download(
+          { url: dataUrl, filename, saveAs: true },
+          (downloadId) => {
+            const err = chrome.runtime.lastError;
+            if (err || !downloadId) {
+              sendResponse({ ok: false, error: err?.message || "download_failed" });
+              return;
+            }
+            const viewerUrl = `${PUBLIC_VIEWER_URL}?t=${Date.now()}`;
+            chrome.tabs.create({ url: viewerUrl }, () => {
+              sendResponse({ ok: true, downloadId, filename, public: true });
+            });
+          }
+        );
       });
     })();
 
