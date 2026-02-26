@@ -323,7 +323,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
-        const viewerUrl = chrome.runtime.getURL(`viewer.html?tabId=${tabId}&t=${Date.now()}`);
+        const viewerUrl = chrome.runtime.getURL(`dist/viewer.html?tabId=${tabId}&t=${Date.now()}`);
         chrome.tabs.create({ url: viewerUrl }, () => sendResponse({ ok: true }));
       });
     })();
@@ -372,7 +372,7 @@ chrome.webRequest.onHeadersReceived.addListener(
     };
 
     item.statusCode = details.statusCode;
-    item.fromCache = details.fromCache;
+    item.fromCache = (details as chrome.webRequest.WebResponseCacheDetails).fromCache;
     item.endTime = Date.now();
     if (item.startTime) item.durationMs = item.endTime - item.startTime;
 

@@ -100,11 +100,12 @@
 
       try {
         if (typeof input === "string") url = input;
-        else if (input && typeof input.url === "string") url = input.url;
+        else if (input instanceof URL) url = input.toString();
+        else if (input instanceof Request) url = input.url;
 
         // method 결정 우선순위: init.method > Request.method > GET
         if (init?.method) method = String(init.method).toUpperCase();
-        else if (input && typeof input.method === "string") method = String(input.method).toUpperCase();
+        else if (input instanceof Request) method = String(input.method).toUpperCase();
 
         // body는 가능한 경우만(문자열/JSON)
         if (init && "body" in init) {

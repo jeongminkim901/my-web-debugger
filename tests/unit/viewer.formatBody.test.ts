@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { JSDOM } from "jsdom";
 
-const viewerPath = path.resolve(process.cwd(), "viewer.js");
+const viewerPath = path.resolve(process.cwd(), "dist", "viewer.js");
 const viewerSource = fs.readFileSync(viewerPath, "utf8");
 
 function createViewerDom() {
@@ -45,17 +45,24 @@ function createViewerDom() {
   return dom;
 }
 
+function getFormatBody(dom: JSDOM) {
+  return (dom.window as any).__MY_WEB_DEBUGGER_TEST__.formatBody as (
+    value: unknown,
+    context?: { item?: { type?: string } }
+  ) => string;
+}
+
 describe("viewer formatBody", () => {
   it("returns none for page hook items with null body", () => {
     const dom = createViewerDom();
-    const formatBody = dom.window.__MY_WEB_DEBUGGER_TEST__.formatBody;
+    const formatBody = getFormatBody(dom);
     expect(formatBody(null, { item: { type: "page" } })).toBe("(none)");
     dom.window.close();
   });
 
   it("returns metadata-mode notice for webRequest items with null body", () => {
     const dom = createViewerDom();
-    const formatBody = dom.window.__MY_WEB_DEBUGGER_TEST__.formatBody;
+    const formatBody = getFormatBody(dom);
     expect(formatBody(null, { item: { type: "xhr" } })).toBe(
       "(not captured in webRequest metadata mode)"
     );
@@ -64,14 +71,14 @@ describe("viewer formatBody", () => {
 
   it("returns empty string notice when body is blank string", () => {
     const dom = createViewerDom();
-    const formatBody = dom.window.__MY_WEB_DEBUGGER_TEST__.formatBody;
+    const formatBody = getFormatBody(dom);
     expect(formatBody("   ", { item: { type: "page" } })).toBe("(empty string)");
     dom.window.close();
   });
 
   it("stringifies object bodies", () => {
     const dom = createViewerDom();
-    const formatBody = dom.window.__MY_WEB_DEBUGGER_TEST__.formatBody;
+    const formatBody = getFormatBody(dom);
     expect(formatBody({ ok: true }, { item: { type: "page" } })).toBe(
       "{\n  \"ok\": true\n}"
     );

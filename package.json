@@ -4,14 +4,22 @@
   "private": true,
   "description": "Chrome extension for network/console debugging with automated tests.",
   "scripts": {
-    "test": "npm run test:unit",
-    "test:unit": "vitest run tests/unit",
-    "test:e2e": "playwright test",
+    "build": "tsc && node scripts/copy-static.mjs",
+    "build:watch": "tsc -w",
+    "copy:watch": "node scripts/watch-static.mjs",
+    "dev": "node scripts/dev.mjs",
+    "copy:static": "node scripts/copy-static.mjs",
+    "test": "npm run build && npm run test:unit",
+    "test:unit": "npm run build && vitest run tests/unit",
+    "test:e2e": "npm run build && playwright test",
     "test:all": "npm run test:unit && npm run test:e2e"
   },
   "devDependencies": {
+    "@types/chrome": "^0.0.286",
+    "@types/node": "^24.3.0",
     "@playwright/test": "^1.54.2",
     "jsdom": "^26.1.0",
+    "typescript": "^5.9.2",
     "vitest": "^2.1.8"
   }
 }

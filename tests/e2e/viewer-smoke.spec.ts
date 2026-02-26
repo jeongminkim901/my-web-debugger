@@ -1,10 +1,10 @@
-const path = require("node:path");
-const { pathToFileURL } = require("node:url");
-const { test, expect } = require("@playwright/test");
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { test, expect } from "@playwright/test";
 
 test("viewer loads session JSON and renders response body", async ({ page }) => {
   const rootDir = path.resolve(__dirname, "..", "..");
-  const viewerUrl = pathToFileURL(path.join(rootDir, "viewer.html")).href;
+  const viewerUrl = pathToFileURL(path.join(rootDir, "dist", "viewer.html")).href;
   const sessionPath = path.join(rootDir, "tests", "fixtures", "sample-session.json");
 
   await page.goto(viewerUrl);

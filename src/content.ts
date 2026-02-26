@@ -6,7 +6,7 @@
 (function injectScript() {
   try {
     const s = document.createElement("script");
-    s.src = chrome.runtime.getURL("inject.js");
+    s.src = chrome.runtime.getURL("dist/inject.js");
     s.onload = () => s.remove();
     (document.head || document.documentElement).appendChild(s);
   } catch (e) {
@@ -14,7 +14,7 @@
   }
 })();
 
-function safeSendMessage(message) {
+function safeSendMessage(message: unknown) {
   try {
     chrome.runtime.sendMessage(message, () => {
       // receiving end 없을 때 lastError만 뜨는 경우가 많아서 "읽어주기"
@@ -26,11 +26,11 @@ function safeSendMessage(message) {
 }
 
 // console 이벤트
-window.addEventListener("MY_DEBUGGER_CONSOLE", (e) => {
-  safeSendMessage({ type: "CONSOLE_EVENT", payload: e.detail });
+window.addEventListener("MY_DEBUGGER_CONSOLE", (e: Event) => {
+  safeSendMessage({ type: "CONSOLE_EVENT", payload: (e as CustomEvent).detail });
 });
 
 // ✅ network 이벤트
-window.addEventListener("MY_DEBUGGER_NETWORK", (e) => {
-  safeSendMessage({ type: "NETWORK_EVENT", payload: e.detail });
+window.addEventListener("MY_DEBUGGER_NETWORK", (e: Event) => {
+  safeSendMessage({ type: "NETWORK_EVENT", payload: (e as CustomEvent).detail });
 });

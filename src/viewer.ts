@@ -3,18 +3,18 @@
 (() => {
   let session = null;
 
-  const el = (id) => document.getElementById(id);
+  const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
-  const drop = el("drop");
-  const fileInput = el("file");
-  const content = el("content");
+  const drop = el<HTMLElement>("drop");
+  const fileInput = el<HTMLInputElement>("file");
+  const content = el<HTMLElement>("content");
 
   // Controls
-  const netSearch = el("netSearch");
-  const statusFilter = el("statusFilter");
-  const sortBy = el("sortBy");
-  const conSearch = el("conSearch");
-  const levelFilter = el("levelFilter");
+  const netSearch = el<HTMLInputElement>("netSearch");
+  const statusFilter = el<HTMLSelectElement>("statusFilter");
+  const sortBy = el<HTMLSelectElement>("sortBy");
+  const conSearch = el<HTMLInputElement>("conSearch");
+  const levelFilter = el<HTMLSelectElement>("levelFilter");
 
   // Toggles
   const SLOW_THRESHOLD_MS = 1000;
@@ -29,12 +29,12 @@
   let netErrorsOnly = false;
   let conErrorsOnly = false;
 
-  const toggleSlowBtn = el("toggleSlow");
-  const toggleNetErrorsBtn = el("toggleNetErrors");
-  const toggleConErrorsBtn = el("toggleConErrors");
+  const toggleSlowBtn = el<HTMLButtonElement>("toggleSlow");
+  const toggleNetErrorsBtn = el<HTMLButtonElement>("toggleNetErrors");
+  const toggleConErrorsBtn = el<HTMLButtonElement>("toggleConErrors");
 
   // Detail panel
-  const netDetail = el("netDetail");
+  const netDetail = el<HTMLElement>("netDetail");
   let currentNetMap = new Map(); // id -> item
   let selectedNetId = null;
 
@@ -58,11 +58,11 @@
     if (file) loadFile(file);
   });
 
-  function loadFile(file) {
+  function loadFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        session = JSON.parse(reader.result);
+        session = JSON.parse(String(reader.result));
         resetToggles();
         clearNetDetail();
         clearHilite();
@@ -127,7 +127,8 @@
 
   // ✅ Network row click (detail + cross highlight)
   el("network").addEventListener("click", (e) => {
-    const tr = e.target?.closest?.("tr[data-net-id]");
+    const target = e.target as HTMLElement | null;
+    const tr = target?.closest?.("tr[data-net-id]");
     if (!tr) return;
 
     const id = tr.getAttribute("data-net-id");
@@ -159,7 +160,8 @@
 
   // ✅ Console row click (cross highlight)
   el("console").addEventListener("click", (e) => {
-    const tr = e.target?.closest?.("tr[data-con-key]");
+    const target = e.target as HTMLElement | null;
+    const tr = target?.closest?.("tr[data-con-key]");
     if (!tr) return;
 
     const key = tr.getAttribute("data-con-key");
@@ -245,7 +247,7 @@
     el("slowest").innerHTML = slow || `<div class="muted">데이터 없음</div>`;
 
     const hostsObj = s.byHost || {};
-    const hosts = Object.entries(hostsObj)
+    const hosts = (Object.entries(hostsObj) as [string, number][])
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20)
       .map(([host, cnt]) => `
@@ -511,7 +513,10 @@
     try { netDetail.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {}
   }
 
-  function formatBody(v, ctx = {}) {
+  function formatBody(
+    v: unknown,
+    ctx: { item?: { type?: string }; kind?: "request" | "response" } = {}
+  ) {
     if (v === null || v === undefined) {
       if (ctx.item && ctx.item.type !== "page") {
         return "(not captured in webRequest metadata mode)";

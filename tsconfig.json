@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022", "DOM"],
+    "allowJs": false,
+    "checkJs": false,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["chrome", "node", "vitest/globals"],
+    "esModuleInterop": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["tests/**/*.ts", "node_modules"]
+}
