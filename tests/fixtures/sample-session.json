@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "schemaVersion": "mwd.v1",
+    "createdAt": 1767168000000,
+    "createdAtIso": "2026-01-01T00:00:00.000Z",
+    "recordingWindow": {
+      "startedAt": 1767168000000,
+      "endedAt": 1767168000500
+    },
+    "tab": {
+      "id": 1,
+      "url": "https://example.com",
+      "title": "Example"
+    }
+  },
+  "summary": {
+    "totalRequests": 1,
+    "byStatusGroup": {
+      "2xx": 1
+    },
+    "byHost": {
+      "example.com": 1
+    },
+    "slowestTop5": [
+      {
+        "method": "GET",
+        "statusCode": 200,
+        "durationMs": 31,
+        "shortUrl": "https://example.com/api/ping"
+      }
+    ]
+  },
+  "network": [
+    {
+      "id": "p_1",
+      "method": "GET",
+      "url": "https://example.com/api/ping",
+      "host": "example.com",
+      "path": "/api/ping",
+      "shortUrl": "https://example.com/api/ping",
+      "type": "page",
+      "statusCode": 200,
+      "statusGroup": "2xx",
+      "durationMs": 31,
+      "startedAt": 1767168000000,
+      "endedAt": 1767168000031,
+      "startedAtIso": "2026-01-01T00:00:00.000Z",
+      "endedAtIso": "2026-01-01T00:00:00.031Z",
+      "transport": "fetch",
+      "requestBody": null,
+      "responseBody": "{\"pong\":true}",
+      "ok": true,
+      "error": null,
+      "pageUrl": "https://example.com"
+    }
+  ],
+  "console": []
+}
