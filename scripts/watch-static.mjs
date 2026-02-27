@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const srcDir = path.join(root, "src");
-const distDir = path.join(root, "dist");
+const srcDir = path.join(root, "src", "ui");
+const distDir = path.join(root, "dist", "ui");
 const files = ["popup.html", "viewer.html", "index.html"];
 
 fs.mkdirSync(distDir, { recursive: true });
@@ -27,3 +27,5 @@ for (const file of files) {
 
 // Keep process alive
 setInterval(() => {}, 1 << 30);
+
+

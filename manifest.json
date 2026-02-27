@@ -6,10 +6,10 @@
   "permissions": ["storage", "tabs", "webRequest", "downloads", "debugger"],
   "host_permissions": ["<all_urls>"],
   "background": {
-    "service_worker": "dist/background.js"
+    "service_worker": "dist/backend/background.js"
   },
   "action": {
-    "default_popup": "dist/popup.html"
+    "default_popup": "dist/ui/popup.html"
   },
   "content_scripts": [
     {
@@ -18,14 +18,18 @@
         "https://chatgpt.com/*",
         "https://*.chatgpt.com/*"
       ],
-      "js": ["dist/content.js"],
+      "js": ["dist/backend/content.js"],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["dist/inject.js"],
+      "resources": ["dist/backend/inject.js"],
       "matches": ["<all_urls>"]
     }
   ]
 }
+
+
+
+

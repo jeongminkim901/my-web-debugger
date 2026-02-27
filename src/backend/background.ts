@@ -1,3 +1,4 @@
+export {};
 // background.js (MV3 service worker)
 
 let recording = false;
@@ -8,6 +9,9 @@ let sessionEndedAt = null;
 const PUBLIC_VIEWER_URL = "https://jeongminkim901.github.io/my-web-debugger/";
 const PUBLIC_VIEWER_MAX_INLINE_BYTES = 700_000; // keep URL reasonably short
 const SCREENSHOT_MAX_INLINE_BYTES = 200_000;
+const SERVER_CONFIG_KEY = "serverConfig";
+const SERVER_TTL_DAYS = 30;
+const SERVER_TTL_SECONDS = SERVER_TTL_DAYS * 24 * 60 * 60;
 
 // tabId -> { console: [], network: [], requests: Map() }
 const store = new Map();
@@ -524,6 +528,64 @@ async function loadExportFromSession(tabId) {
   }
 }
 
+async function loadServerConfig() {
+  try {
+    const res = await chrome.storage.local.get(SERVER_CONFIG_KEY);
+    return res?.[SERVER_CONFIG_KEY] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveServerConfig(config) {
+  try {
+    await chrome.storage.local.set({ [SERVER_CONFIG_KEY]: config });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeBaseUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+}
+
+function buildShareViewerUrl(viewerBaseUrl, id) {
+  const base = normalizeBaseUrl(viewerBaseUrl || PUBLIC_VIEWER_URL);
+  return `${base}/#id=${encodeURIComponent(id)}`;
+}
+
+async function shareToServer(exportData, serverConfig) {
+  const baseUrl = normalizeBaseUrl(serverConfig?.serverBaseUrl);
+  const jwt = String(serverConfig?.jwt || "").trim();
+  if (!baseUrl) return { ok: false, error: "missing_server_url" };
+  if (!jwt) return { ok: false, error: "missing_jwt" };
+
+  const res = await fetch(`${baseUrl}/share`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${jwt}`
+    },
+    body: JSON.stringify({
+      payload: exportData,
+      meta: exportData?.meta || null,
+      ttlSeconds: SERVER_TTL_SECONDS
+    })
+  });
+
+  if (!res.ok) {
+    return { ok: false, error: `share_failed_${res.status}` };
+  }
+
+  const data = await res.json().catch(() => null);
+  const id = data?.id || data?.shareId || null;
+  if (!id) return { ok: false, error: "missing_id" };
+  return { ok: true, id };
+}
+
 // ✅ 메시지 처리
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "GET_STATUS") {
@@ -539,6 +601,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     const state = ensureDebuggerState(tabId);
     sendResponse({ ok: true, enabled: !!state.enabled, attached: !!state.attached });
+    return true;
+  }
+
+  if (msg.type === "GET_SERVER_CONFIG") {
+    (async () => {
+      const config = await loadServerConfig();
+      sendResponse({ ok: true, config: config || null });
+    })();
+    return true;
+  }
+
+  if (msg.type === "SET_SERVER_CONFIG") {
+    (async () => {
+      const ok = await saveServerConfig(msg.config || null);
+      sendResponse({ ok: !!ok });
+    })();
     return true;
   }
 
@@ -699,6 +777,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const meta = await loadMeta(tabId);
         const screenshot = await captureScreenshot(tab);
         const exportData = buildExportData({ tabId, tab, data, meta, screenshot });
+
+        const serverConfig = await loadServerConfig();
+        if (serverConfig?.serverBaseUrl) {
+          try {
+            const shareRes = await shareToServer(exportData, serverConfig);
+            if (!shareRes.ok) {
+              sendResponse({ ok: false, error: shareRes.error || "share_failed" });
+              return;
+            }
+            const viewerUrl = buildShareViewerUrl(serverConfig?.viewerBaseUrl, shareRes.id);
+            chrome.tabs.create({ url: viewerUrl }, () => {
+              sendResponse({ ok: true, public: false, inline: false, id: shareRes.id });
+            });
+            return;
+          } catch (err) {
+            sendResponse({ ok: false, error: "share_failed" });
+            return;
+          }
+        }
 
         const json = JSON.stringify(exportData, null, 2);
         const inlineSafe = isInlineSafe(json, exportData.screenshot);

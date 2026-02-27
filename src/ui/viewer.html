@@ -143,6 +143,21 @@
     </div>
   </div>
 
+  <div class="card" style="margin-top:12px;">
+    <div class="row">
+      <div>
+        <div><b>Server Share Settings</b></div>
+        <div class="muted">Only needed when opening #id links</div>
+      </div>
+      <div class="right muted small" id="serverStatus"></div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <input id="serverBaseUrl" placeholder="Server Base URL (e.g. https://intra.api)" />
+      <input id="serverJwt" type="password" placeholder="JWT (optional for GET)" />
+      <button id="saveServer" class="pill btn">Save</button>
+    </div>
+  </div>
+
   <div id="content" class="hidden">
     <h2>Summary</h2>
     <div class="row" id="kpis"></div>

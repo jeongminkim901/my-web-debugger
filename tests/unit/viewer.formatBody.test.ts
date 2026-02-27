@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { JSDOM } from "jsdom";
 
-const viewerPath = path.resolve(process.cwd(), "dist", "viewer.js");
+const viewerPath = path.resolve(process.cwd(), "dist", "ui", "viewer.js");
 const viewerSource = fs.readFileSync(viewerPath, "utf8");
 
 function createViewerDom() {
@@ -94,3 +94,4 @@ describe("viewer formatBody", () => {
     dom.window.close();
   });
 });
+

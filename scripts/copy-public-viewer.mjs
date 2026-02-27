@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const distDir = path.join(root, "dist");
+const distDir = path.join(root, "dist", "ui");
 const docsDir = path.join(root, "docs");
 
 const files = ["viewer.html", "viewer.js"];
@@ -25,3 +25,4 @@ const indexHtml = path.join(docsDir, "index.html");
 if (fs.existsSync(viewerHtml)) {
   fs.copyFileSync(viewerHtml, indexHtml);
 }
+

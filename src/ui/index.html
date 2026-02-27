@@ -88,6 +88,21 @@
     </div>
   </div>
 
+  <div class="card" style="margin-top:12px;">
+    <div class="row">
+      <div>
+        <div><b>Server Share Settings</b></div>
+        <div class="muted">#id 링크 열 때만 필요</div>
+      </div>
+      <div class="right muted small" id="serverStatus"></div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <input id="serverBaseUrl" placeholder="Server Base URL (e.g. https://intra.api)" />
+      <input id="serverJwt" type="password" placeholder="JWT (optional for GET)" />
+      <button id="saveServer" class="pill btn">Save</button>
+    </div>
+  </div>
+
   <div id="content" class="hidden">
     <h2>Summary</h2>
     <div class="row" id="kpis"></div>
@@ -167,6 +182,10 @@
   const drop = el("drop");
   const fileInput = el("file");
   const content = el("content");
+  const serverBaseUrlEl = el("serverBaseUrl");
+  const serverJwtEl = el("serverJwt");
+  const serverStatusEl = el("serverStatus");
+  const saveServerBtn = el("saveServer");
 
   // Controls
   const netSearch = el("netSearch");
@@ -181,6 +200,51 @@
   let bodyOnly = false;
   const toggleSlowBtn = el("toggleSlow");
   const toggleBodyBtn = el("toggleBody");
+
+  const SERVER_SETTINGS_KEY = "my-web-debugger:serverSettings";
+
+  function loadServerSettings() {
+    try {
+      const raw = localStorage.getItem(SERVER_SETTINGS_KEY);
+      if (!raw) return { serverBaseUrl: "", jwt: "" };
+      const parsed = JSON.parse(raw);
+      return {
+        serverBaseUrl: typeof parsed?.serverBaseUrl === "string" ? parsed.serverBaseUrl : "",
+        jwt: typeof parsed?.jwt === "string" ? parsed.jwt : ""
+      };
+    } catch {
+      return { serverBaseUrl: "", jwt: "" };
+    }
+  }
+
+  function saveServerSettings(settings) {
+    try {
+      localStorage.setItem(SERVER_SETTINGS_KEY, JSON.stringify(settings));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function setServerStatus(text) {
+    if (serverStatusEl) serverStatusEl.textContent = text || "";
+  }
+
+  const initialServerSettings = loadServerSettings();
+  if (serverBaseUrlEl) serverBaseUrlEl.value = initialServerSettings.serverBaseUrl || "";
+  if (serverJwtEl) serverJwtEl.value = initialServerSettings.jwt || "";
+
+  if (saveServerBtn) {
+    saveServerBtn.addEventListener("click", () => {
+      const settings = {
+        serverBaseUrl: (serverBaseUrlEl?.value || "").trim(),
+        jwt: (serverJwtEl?.value || "").trim()
+      };
+      const ok = saveServerSettings(settings);
+      setServerStatus(ok ? "Saved" : "Save failed");
+      if (ok) setTimeout(() => setServerStatus(""), 2000);
+    });
+  }
 
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
@@ -252,6 +316,43 @@
     } catch {
       return null;
     }
+  }
+
+  function normalizeBaseUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  }
+
+  async function fetchShareById(id) {
+    const settings = loadServerSettings();
+    const baseUrl = normalizeBaseUrl(settings.serverBaseUrl);
+    if (!baseUrl) {
+      setServerStatus("Server Base URL이 설정되지 않았습니다.");
+      alert("Server Base URL이 설정되지 않았습니다.");
+      return { ok: false, error: "missing_base_url" };
+    }
+    const headers = {};
+    if (settings.jwt) headers["Authorization"] = `Bearer ${settings.jwt}`;
+
+    const res = await fetch(`${baseUrl}/share/${encodeURIComponent(id)}`, { headers });
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        setServerStatus("JWT가 필요하거나 유효하지 않습니다.");
+        alert("JWT가 필요하거나 유효하지 않습니다.");
+      } else if (res.status === 404) {
+        setServerStatus("공유 데이터가 없거나 만료되었습니다.");
+        alert("공유 데이터가 없거나 만료되었습니다.");
+      } else {
+        setServerStatus(`조회 실패 (${res.status})`);
+        alert(`공유 데이터 조회 실패: ${res.status}`);
+      }
+      return { ok: false, error: `http_${res.status}` };
+    }
+    const data = await res.json().catch(() => null);
+    if (!data) return { ok: false, error: "invalid_json" };
+    if (data.payload) return { ok: true, data: data.payload };
+    return { ok: true, data };
   }
 
   // Re-render on control changes
@@ -535,6 +636,20 @@
 
   async function loadFromHashIfPossible() {
     const hash = location.hash || "";
+    if (hash.startsWith("#id=")) {
+      const id = hash.slice("#id=".length);
+      if (!id) return false;
+      const res = await fetchShareById(id);
+      if (!res?.ok) return false;
+      session = res.data;
+      slowOnly = false;
+      bodyOnly = false;
+      if (toggleSlowBtn) toggleSlowBtn.textContent = "Slow only: OFF";
+      if (toggleBodyBtn) toggleBodyBtn.textContent = "Body only: OFF";
+      renderAll();
+      return true;
+    }
+
     if (!hash.startsWith("#data=")) return false;
     const payload = hash.slice("#data=".length);
     const json = await decodeUrlPayload(payload);

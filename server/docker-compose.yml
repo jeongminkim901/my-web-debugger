@@ -1,0 +1,12 @@
+services:
+  share-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DB_PATH: /data/app.db
+      JWT_SECRET: change-me
+      JWT_ALG: HS256
+      CLEANUP_INTERVAL_SECONDS: 3600
+    volumes:
+      - ./data:/data

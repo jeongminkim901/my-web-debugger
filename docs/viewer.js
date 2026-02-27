@@ -5,6 +5,10 @@
     const drop = el("drop");
     const fileInput = el("file");
     const content = el("content");
+    const serverBaseUrlEl = el("serverBaseUrl");
+    const serverJwtEl = el("serverJwt");
+    const serverStatusEl = el("serverStatus");
+    const saveServerBtn = el("saveServer");
     // Controls
     const netSearch = el("netSearch");
     const hostFilter = el("hostFilter");
@@ -47,6 +51,59 @@
     let hiliteMode = "none"; // "none" | "fromConsole" | "fromNetwork"
     let hiliteCenterTs = null;
     let selectedConsoleKey = null;
+    // Server share settings (viewer-side)
+    const SERVER_SETTINGS_KEY = "my-web-debugger:serverSettings";
+    function loadServerSettings() {
+        try {
+            const raw = localStorage.getItem(SERVER_SETTINGS_KEY);
+            if (!raw)
+                return { serverBaseUrl: "", jwt: "" };
+            const parsed = JSON.parse(raw);
+            return {
+                serverBaseUrl: typeof parsed?.serverBaseUrl === "string" ? parsed.serverBaseUrl : "",
+                jwt: typeof parsed?.jwt === "string" ? parsed.jwt : ""
+            };
+        }
+        catch {
+            return { serverBaseUrl: "", jwt: "" };
+        }
+    }
+    function saveServerSettings(settings) {
+        try {
+            localStorage.setItem(SERVER_SETTINGS_KEY, JSON.stringify(settings));
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+    function applyServerSettingsToUi(settings) {
+        if (serverBaseUrlEl)
+            serverBaseUrlEl.value = settings.serverBaseUrl || "";
+        if (serverJwtEl)
+            serverJwtEl.value = settings.jwt || "";
+    }
+    function getServerSettingsFromUi() {
+        return {
+            serverBaseUrl: (serverBaseUrlEl?.value || "").trim(),
+            jwt: (serverJwtEl?.value || "").trim()
+        };
+    }
+    function setServerStatus(text) {
+        if (serverStatusEl)
+            serverStatusEl.textContent = text || "";
+    }
+    const initialServerSettings = loadServerSettings();
+    applyServerSettingsToUi(initialServerSettings);
+    if (saveServerBtn) {
+        saveServerBtn.addEventListener("click", () => {
+            const settings = getServerSettingsFromUi();
+            const ok = saveServerSettings(settings);
+            setServerStatus(ok ? "Saved" : "Save failed");
+            if (ok)
+                setTimeout(() => setServerStatus(""), 2000);
+        });
+    }
     // ---------- DnD ----------
     drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag"); });
     drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
@@ -832,6 +889,58 @@
             return null;
         }
     }
+    function normalizeBaseUrl(value) {
+        const raw = String(value || "").trim();
+        if (!raw)
+            return "";
+        return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+    }
+    async function fetchShareById(id) {
+        const settings = loadServerSettings();
+        const baseUrl = normalizeBaseUrl(settings.serverBaseUrl);
+        if (!baseUrl) {
+            setServerStatus("Server Base URL is not set.");
+            try {
+                alert("Server Base URL is not set. Open settings and save it.");
+            }
+            catch { }
+            return { ok: false, error: "missing_base_url" };
+        }
+        const headers = {};
+        if (settings.jwt)
+            headers["Authorization"] = `Bearer ${settings.jwt}`;
+        const res = await fetch(`${baseUrl}/share/${encodeURIComponent(id)}`, { headers });
+        if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+                setServerStatus("JWT required or invalid.");
+                try {
+                    alert("JWT required or invalid. Please enter a valid JWT.");
+                }
+                catch { }
+            }
+            else if (res.status === 404) {
+                setServerStatus("Share not found or expired.");
+                try {
+                    alert("Share not found or expired.");
+                }
+                catch { }
+            }
+            else {
+                setServerStatus(`Fetch failed (${res.status}).`);
+                try {
+                    alert(`Failed to fetch share: ${res.status}`);
+                }
+                catch { }
+            }
+            return { ok: false, error: `http_${res.status}` };
+        }
+        const data = await res.json().catch(() => null);
+        if (!data)
+            return { ok: false, error: "invalid_json" };
+        if (data.payload)
+            return { ok: true, data: data.payload };
+        return { ok: true, data };
+    }
     function parseOptionalNumber(raw) {
         const t = String(raw || "").trim();
         if (!t)
@@ -851,6 +960,21 @@
         if (!loc)
             return false;
         const hash = loc.hash || "";
+        if (hash.startsWith("#id=")) {
+            const id = hash.slice("#id=".length);
+            if (!id)
+                return false;
+            const res = await fetchShareById(id);
+            if (!res?.ok)
+                return false;
+            session = res.data;
+            resetToggles();
+            resetFilters();
+            clearNetDetail();
+            clearHilite();
+            renderAll();
+            return true;
+        }
         if (!hash.startsWith("#data="))
             return false;
         const payload = hash.slice("#data=".length);

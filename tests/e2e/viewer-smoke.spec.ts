@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
 
 test("viewer loads session JSON and renders response body", async ({ page }) => {
   const rootDir = path.resolve(__dirname, "..", "..");
-  const viewerUrl = pathToFileURL(path.join(rootDir, "dist", "viewer.html")).href;
+  const viewerUrl = pathToFileURL(path.join(rootDir, "dist", "ui", "viewer.html")).href;
   const sessionPath = path.join(rootDir, "tests", "fixtures", "sample-session.json");
 
   await page.goto(viewerUrl);
@@ -15,3 +15,4 @@ test("viewer loads session JSON and renders response body", async ({ page }) => 
   await expect(page.locator("#netDetail")).toContainText("Response Body");
   await expect(page.locator("#netDetail pre").nth(1)).toContainText("{\"pong\":true}");
 });
+
