@@ -18,12 +18,13 @@ const store = new Map();
 
 const DEBUGGER_PROTOCOL_VERSION = "1.3";
 const DEBUGGER_MAX_BODY_CHARS = 200_000;
+const WEBSOCKET_MAX_CHARS = 20_000;
 const debuggerState = new Map(); // tabId -> { enabled: boolean, attached: boolean, requests: Map() }
 let debuggerEventsInstalled = false;
 
 function ensureDebuggerState(tabId) {
   if (!debuggerState.has(tabId)) {
-    debuggerState.set(tabId, { enabled: false, attached: false, requests: new Map() });
+    debuggerState.set(tabId, { enabled: false, attached: false, requests: new Map(), websockets: new Map() });
   }
   return debuggerState.get(tabId);
 }
@@ -48,6 +49,12 @@ function clampText(s) {
   if (typeof s !== "string") return s;
   if (s.length <= DEBUGGER_MAX_BODY_CHARS) return s;
   return s.slice(0, DEBUGGER_MAX_BODY_CHARS) + `\n...[truncated ${s.length - DEBUGGER_MAX_BODY_CHARS} chars]`;
+}
+
+function clampWsPayload(s) {
+  if (typeof s !== "string") return s;
+  if (s.length <= WEBSOCKET_MAX_CHARS) return s;
+  return s.slice(0, WEBSOCKET_MAX_CHARS) + `\n...[truncated ${s.length - WEBSOCKET_MAX_CHARS} chars]`;
 }
 
 function decodeDebuggerBody(body, base64Encoded, mimeType) {
@@ -81,6 +88,64 @@ function installDebuggerEventsOnce() {
     if (!state.attached) return;
 
     const data = ensure(tabId);
+
+    if (method === "Network.webSocketCreated") {
+      const p = params || {};
+      const requestId = p.requestId;
+      if (!requestId) return;
+      state.websockets.set(requestId, {
+        id: requestId,
+        url: p.url || "",
+        createdAt: Date.now()
+      });
+      data.websockets.push({
+        id: requestId,
+        url: p.url || "",
+        direction: "open",
+        opcode: null,
+        payload: null,
+        timestamp: Date.now(),
+        transport: "debugger"
+      });
+      return;
+    }
+
+    if (method === "Network.webSocketFrameSent" || method === "Network.webSocketFrameReceived") {
+      const p = params || {};
+      const requestId = p.requestId;
+      if (!requestId) return;
+      const info = p.response || {};
+      const ws = state.websockets.get(requestId);
+      const payload = clampWsPayload(info.payloadData || "");
+      data.websockets.push({
+        id: requestId,
+        url: ws?.url || "",
+        direction: method === "Network.webSocketFrameSent" ? "sent" : "received",
+        opcode: typeof info.opcode === "number" ? info.opcode : null,
+        payload,
+        timestamp: Date.now(),
+        transport: "debugger"
+      });
+      return;
+    }
+
+    if (method === "Network.webSocketClosed") {
+      const p = params || {};
+      const requestId = p.requestId;
+      if (!requestId) return;
+      const ws = state.websockets.get(requestId);
+      data.websockets.push({
+        id: requestId,
+        url: ws?.url || "",
+        direction: "close",
+        opcode: null,
+        payload: null,
+        timestamp: Date.now(),
+        transport: "debugger"
+      });
+      state.websockets.delete(requestId);
+      return;
+    }
 
     if (method === "Network.requestWillBeSent") {
       const p = params || {};
@@ -203,7 +268,7 @@ async function detachDebugger(tabId): Promise<{ ok: boolean; error?: string | nu
 
 function ensure(tabId) {
   if (!store.has(tabId)) {
-    store.set(tabId, { console: [], network: [], requests: new Map() });
+    store.set(tabId, { console: [], network: [], websockets: [], requests: new Map() });
   }
   return store.get(tabId);
 }
@@ -407,7 +472,8 @@ function buildExportData({ tabId, tab, data, meta, screenshot }) {
     screenshot: screenshot || null,
     summary,
     console: data.console,
-    network: normalizedNetwork
+    network: normalizedNetwork,
+    websockets: data.websockets || []
   };
 }
 
@@ -648,7 +714,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sessionEndedAt = null;
 
     const tabId = sender.tab?.id || msg.tabId;
-    if (tabId) store.set(tabId, { console: [], network: [], requests: new Map() });
+    if (tabId) store.set(tabId, { console: [], network: [], websockets: [], requests: new Map() });
 
     if (tabId && isDeepCaptureEnabled(tabId)) {
       void attachDebugger(tabId);
@@ -743,7 +809,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const tabId = msg.tabId;
 
     chrome.tabs.get(tabId, async (tab) => {
-      const data = store.get(tabId) || { console: [], network: [], requests: new Map() };
+      const data = store.get(tabId) || { console: [], network: [], websockets: [], requests: new Map() };
       const meta = await loadMeta(tabId);
       const screenshot = await captureScreenshot(tab);
       const exportData = buildExportData({ tabId, tab, data, meta, screenshot });
@@ -773,7 +839,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const tabId = msg.tabId;
 
       chrome.tabs.get(tabId, async (tab) => {
-        const data = store.get(tabId) || { console: [], network: [], requests: new Map() };
+        const data = store.get(tabId) || { console: [], network: [], websockets: [], requests: new Map() };
         const meta = await loadMeta(tabId);
         const screenshot = await captureScreenshot(tab);
         const exportData = buildExportData({ tabId, tab, data, meta, screenshot });
