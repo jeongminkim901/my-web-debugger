@@ -788,7 +788,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
             const viewerUrl = buildShareViewerUrl(serverConfig?.viewerBaseUrl, shareRes.id);
             chrome.tabs.create({ url: viewerUrl }, () => {
-              sendResponse({ ok: true, public: false, inline: false, id: shareRes.id });
+              sendResponse({ ok: true, public: false, inline: false, id: shareRes.id, url: viewerUrl });
             });
             return;
           } catch (err) {
@@ -818,7 +818,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 }
                 const viewerUrl = `${PUBLIC_VIEWER_URL}?t=${Date.now()}`;
                 chrome.tabs.create({ url: viewerUrl }, () => {
-                  sendResponse({ ok: true, downloadId, filename, public: true, inline: false });
+                  sendResponse({ ok: true, downloadId, filename, public: true, inline: false, url: viewerUrl });
                 });
               }
             );
@@ -827,7 +827,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           const viewerUrl = `${PUBLIC_VIEWER_URL}#data=${encoded.payload}`;
           chrome.tabs.create({ url: viewerUrl }, () => {
-            sendResponse({ ok: true, public: true, inline: true });
+            sendResponse({ ok: true, public: true, inline: true, url: viewerUrl });
           });
           return;
         }
@@ -846,7 +846,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
             const viewerUrl = `${PUBLIC_VIEWER_URL}?t=${Date.now()}`;
             chrome.tabs.create({ url: viewerUrl }, () => {
-              sendResponse({ ok: true, downloadId, filename, public: true, inline: false });
+              sendResponse({ ok: true, downloadId, filename, public: true, inline: false, url: viewerUrl });
             });
           }
         );

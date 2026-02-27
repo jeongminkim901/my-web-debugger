@@ -25,6 +25,20 @@
         margin-bottom:10px;
       }
       #status { margin-top:10px; font-size:12px; color:#666; min-height: 18px; }
+      #toast {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        background: #111826;
+        color: #e6edf3;
+        border: 1px solid #1f2a3a;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        display: none;
+        z-index: 10;
+      }
     </style>
   </head>
   <body>
@@ -52,6 +66,7 @@
     <button id="saveServer">Save Server Settings</button>
 
     <div id="status"></div>
+    <div id="toast"></div>
     <script src="popup.js"></script>
   </body>
 </html>

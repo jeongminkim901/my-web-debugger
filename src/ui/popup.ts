@@ -5,11 +5,13 @@ const badgeEl = document.getElementById("recBadge") as HTMLElement;
 const noteEl = document.getElementById("note") as HTMLTextAreaElement;
 const tagsEl = document.getElementById("tags") as HTMLInputElement;
 const deepCaptureEl = document.getElementById("deepCapture") as HTMLInputElement;
+const toastEl = document.getElementById("toast") as HTMLElement;
 const serverBaseUrlEl = document.getElementById("serverBaseUrl") as HTMLInputElement;
 const viewerBaseUrlEl = document.getElementById("viewerBaseUrl") as HTMLInputElement;
 const serverJwtEl = document.getElementById("serverJwt") as HTMLInputElement;
 
 let statusTimer = null as ReturnType<typeof setTimeout> | null;
+let toastTimer = null as ReturnType<typeof setTimeout> | null;
 
 function setStatus(text: string) {
   statusEl.textContent = text;
@@ -29,6 +31,38 @@ function setBadge(isOn: boolean) {
   }
 }
 
+function showToast(text: string) {
+  if (!toastEl) return;
+  toastEl.textContent = text;
+  toastEl.style.display = "block";
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastEl.style.display = "none";
+    toastEl.textContent = "";
+  }, 2500);
+}
+
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
 async function getCurrentTabId() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab?.id;
@@ -162,6 +196,13 @@ document.getElementById("openViewer")!.onclick = async () => {
 
   chrome.runtime.sendMessage({ type: "OPEN_VIEWER", tabId }, (res) => {
     if (res?.ok) {
+      const url = res?.url;
+      if (url) {
+        copyToClipboard(url).then((copied) => {
+          if (copied) showToast("Share link copied.");
+          else showToast("Share opened (copy failed).");
+        });
+      }
       if (res.inline) setStatus("Public Viewer opened.");
       else setStatus("Public Viewer opened. Upload the downloaded JSON.");
     } else {
