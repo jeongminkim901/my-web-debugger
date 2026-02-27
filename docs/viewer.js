@@ -66,6 +66,7 @@
             try {
                 session = JSON.parse(String(reader.result));
                 resetToggles();
+                resetFilters();
                 clearNetDetail();
                 clearHilite();
                 renderAll();
@@ -81,6 +82,26 @@
         netErrorsOnly = false;
         conErrorsOnly = false;
         syncToggleUI();
+    }
+    function resetFilters() {
+        if (netSearch)
+            netSearch.value = "";
+        if (hostFilter)
+            hostFilter.value = "";
+        if (statusFilter)
+            statusFilter.value = "all";
+        if (methodFilter)
+            methodFilter.value = "all";
+        if (sortBy)
+            sortBy.value = "time_desc";
+        if (durMin)
+            durMin.value = "";
+        if (durMax)
+            durMax.value = "";
+        if (conSearch)
+            conSearch.value = "";
+        if (levelFilter)
+            levelFilter.value = "all";
     }
     function syncToggleUI() {
         if (toggleSlowBtn) {
@@ -785,6 +806,7 @@
         try {
             session = JSON.parse(json);
             resetToggles();
+            resetFilters();
             clearNetDetail();
             clearHilite();
             renderAll();
@@ -818,6 +840,7 @@
                 if (res?.ok && res.data) {
                     session = res.data;
                     resetToggles();
+                    resetFilters();
                     clearNetDetail();
                     clearHilite();
                     renderAll();
