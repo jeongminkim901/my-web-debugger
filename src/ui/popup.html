@@ -58,6 +58,38 @@
       .row button {
         flex: 1 1 0;
       }
+      #metaModal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      #metaModal .box {
+        width: 90%;
+        max-width: 320px;
+        background: #fff;
+        border-radius: 10px;
+        padding: 12px;
+        border: 1px solid #ddd;
+      }
+      #metaModal .title {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #111;
+      }
+      #metaModal .actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      #metaModal .actions button {
+        flex: 1 1 0;
+        padding: 8px;
+      }
     </style>
   </head>
   <body>
@@ -91,6 +123,17 @@
       <div class="row">
         <button id="copyShare">Copy Link</button>
         <button id="openShare">Open Link</button>
+      </div>
+    </div>
+    <div id="metaModal">
+      <div class="box">
+        <div class="title">Add note & tags before sharing</div>
+        <textarea id="modalNote" placeholder="Session note (optional)"></textarea>
+        <input id="modalTags" placeholder="Tags (comma separated)" />
+        <div class="actions">
+          <button id="metaCancel">Cancel</button>
+          <button id="metaSave">Save</button>
+        </div>
       </div>
     </div>
     <div id="toast"></div>

@@ -10,6 +10,11 @@ const sharePanelEl = document.getElementById("sharePanel") as HTMLElement;
 const shareUrlEl = document.getElementById("shareUrl") as HTMLInputElement;
 const copyShareBtn = document.getElementById("copyShare") as HTMLButtonElement;
 const openShareBtn = document.getElementById("openShare") as HTMLButtonElement;
+const metaModalEl = document.getElementById("metaModal") as HTMLElement;
+const modalNoteEl = document.getElementById("modalNote") as HTMLTextAreaElement;
+const modalTagsEl = document.getElementById("modalTags") as HTMLInputElement;
+const metaCancelBtn = document.getElementById("metaCancel") as HTMLButtonElement;
+const metaSaveBtn = document.getElementById("metaSave") as HTMLButtonElement;
 const serverBaseUrlEl = document.getElementById("serverBaseUrl") as HTMLInputElement;
 const viewerBaseUrlEl = document.getElementById("viewerBaseUrl") as HTMLInputElement;
 const serverJwtEl = document.getElementById("serverJwt") as HTMLInputElement;
@@ -51,6 +56,45 @@ function showSharePanel(url: string) {
   lastShareUrl = url;
   if (shareUrlEl) shareUrlEl.value = url;
   if (sharePanelEl) sharePanelEl.style.display = "block";
+}
+
+function openMetaModal(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!metaModalEl) return resolve(false);
+    if (modalNoteEl) modalNoteEl.value = noteEl?.value || "";
+    if (modalTagsEl) modalTagsEl.value = tagsEl?.value || "";
+
+    const cleanup = () => {
+      metaModalEl.style.display = "none";
+      metaCancelBtn?.removeEventListener("click", onCancel);
+      metaSaveBtn?.removeEventListener("click", onSave);
+      metaModalEl?.removeEventListener("click", onOverlay);
+      document.removeEventListener("keydown", onKey);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+    const onSave = () => {
+      if (noteEl) noteEl.value = modalNoteEl?.value || "";
+      if (tagsEl) tagsEl.value = modalTagsEl?.value || "";
+      cleanup();
+      resolve(true);
+    };
+    const onOverlay = (e: MouseEvent) => {
+      if (e.target === metaModalEl) onCancel();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+
+    metaModalEl.style.display = "flex";
+    metaCancelBtn?.addEventListener("click", onCancel);
+    metaSaveBtn?.addEventListener("click", onSave);
+    metaModalEl?.addEventListener("click", onOverlay);
+    document.addEventListener("keydown", onKey);
+  });
 }
 
 async function copyToClipboard(text: string) {
@@ -203,6 +247,11 @@ document.getElementById("start")!.onclick = async () => {
 };
 
 document.getElementById("stop")!.onclick = async () => {
+  const confirmed = await openMetaModal();
+  if (!confirmed) return;
+  const tabId = await getCurrentTabId();
+  if (tabId) await sendMeta(tabId);
+
   chrome.runtime.sendMessage({ type: "STOP" }, (res) => {
     if (res?.ok) {
       setBadge(false);
@@ -218,6 +267,8 @@ document.getElementById("stop")!.onclick = async () => {
 document.getElementById("openViewer")!.onclick = async () => {
   const tabId = await getCurrentTabId();
   if (!tabId) return setStatus("Could not find current tab.");
+  const confirmed = await openMetaModal();
+  if (!confirmed) return;
   await sendMeta(tabId);
 
   chrome.runtime.sendMessage({ type: "OPEN_VIEWER", tabId }, (res) => {
@@ -246,6 +297,8 @@ document.getElementById("openViewer")!.onclick = async () => {
 document.getElementById("export")!.onclick = async () => {
   const tabId = await getCurrentTabId();
   if (!tabId) return setStatus("No active tab to export.");
+  const confirmed = await openMetaModal();
+  if (!confirmed) return;
   await sendMeta(tabId);
 
   chrome.runtime.sendMessage({ type: "EXPORT", tabId }, (res) => {
