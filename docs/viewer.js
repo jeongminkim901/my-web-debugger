@@ -474,8 +474,8 @@
         const hostQ = (hostFilter.value || "").trim().toLowerCase();
         const status = statusFilter.value;
         const method = methodFilter.value;
-        const minMs = Number((durMin.value || "").trim());
-        const maxMs = Number((durMax.value || "").trim());
+        const minMs = parseOptionalNumber(durMin.value);
+        const maxMs = parseOptionalNumber(durMax.value);
         let filtered = items.filter(x => {
             const hay = `${x.host || ""} ${x.path || ""} ${x.url || ""}`.toLowerCase();
             const okQuery = q ? hay.includes(q) : true;
@@ -761,6 +761,13 @@
         catch {
             return null;
         }
+    }
+    function parseOptionalNumber(raw) {
+        const t = String(raw || "").trim();
+        if (!t)
+            return NaN;
+        const n = Number(t);
+        return Number.isFinite(n) ? n : NaN;
     }
     function loadFromHashIfPossible() {
         const hash = location.hash || "";
