@@ -3,6 +3,7 @@ const statusEl = document.getElementById("status") as HTMLElement;
 const badgeEl = document.getElementById("recBadge") as HTMLElement;
 const noteEl = document.getElementById("note") as HTMLTextAreaElement;
 const tagsEl = document.getElementById("tags") as HTMLInputElement;
+const deepCaptureEl = document.getElementById("deepCapture") as HTMLInputElement;
 
 let statusTimer = null as ReturnType<typeof setTimeout> | null;
 
@@ -51,6 +52,41 @@ async function sendMeta(tabId: number) {
 chrome.runtime.sendMessage({ type: "GET_STATUS" }, (res) => {
   if (res?.ok) setBadge(!!res.recording);
 });
+
+async function syncDeepCaptureToggle() {
+  const tabId = await getCurrentTabId();
+  if (!tabId || !deepCaptureEl) return;
+
+  chrome.runtime.sendMessage({ type: "GET_DEEP_CAPTURE", tabId }, (res) => {
+    if (!deepCaptureEl) return;
+    if (res?.ok) {
+      deepCaptureEl.checked = !!res.enabled;
+      deepCaptureEl.disabled = false;
+    } else {
+      deepCaptureEl.checked = false;
+      deepCaptureEl.disabled = true;
+    }
+  });
+}
+
+syncDeepCaptureToggle();
+
+if (deepCaptureEl) {
+  deepCaptureEl.addEventListener("change", async () => {
+    const tabId = await getCurrentTabId();
+    if (!tabId) return setStatus("Could not find current tab.");
+
+    const enable = !!deepCaptureEl.checked;
+    chrome.runtime.sendMessage({ type: "SET_DEEP_CAPTURE", tabId, enabled: enable }, (res) => {
+      if (res?.ok) {
+        setStatus(enable ? "Deep capture enabled" : "Deep capture disabled");
+      } else {
+        deepCaptureEl.checked = !enable;
+        setStatus(`Deep capture failed: ${res?.error || "unknown"}`);
+      }
+    });
+  });
+}
 
 document.getElementById("start")!.onclick = async () => {
   const tabId = await getCurrentTabId();

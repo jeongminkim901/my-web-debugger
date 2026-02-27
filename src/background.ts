@@ -12,6 +12,191 @@ const SCREENSHOT_MAX_INLINE_BYTES = 200_000;
 // tabId -> { console: [], network: [], requests: Map() }
 const store = new Map();
 
+const DEBUGGER_PROTOCOL_VERSION = "1.3";
+const DEBUGGER_MAX_BODY_CHARS = 200_000;
+const debuggerState = new Map(); // tabId -> { enabled: boolean, attached: boolean, requests: Map() }
+let debuggerEventsInstalled = false;
+
+function ensureDebuggerState(tabId) {
+  if (!debuggerState.has(tabId)) {
+    debuggerState.set(tabId, { enabled: false, attached: false, requests: new Map() });
+  }
+  return debuggerState.get(tabId);
+}
+
+function isDeepCaptureEnabled(tabId) {
+  return !!debuggerState.get(tabId)?.enabled;
+}
+
+function isTextContentType(ct) {
+  if (!ct) return true;
+  const v = String(ct).toLowerCase();
+  return (
+    v.startsWith("text/") ||
+    v.includes("json") ||
+    v.includes("xml") ||
+    v.includes("x-www-form-urlencoded") ||
+    v.includes("javascript")
+  );
+}
+
+function clampText(s) {
+  if (typeof s !== "string") return s;
+  if (s.length <= DEBUGGER_MAX_BODY_CHARS) return s;
+  return s.slice(0, DEBUGGER_MAX_BODY_CHARS) + `\n...[truncated ${s.length - DEBUGGER_MAX_BODY_CHARS} chars]`;
+}
+
+function decodeDebuggerBody(body, base64Encoded, mimeType) {
+  if (!body) return null;
+  if (!base64Encoded) return clampText(body);
+  if (body.length > DEBUGGER_MAX_BODY_CHARS * 2) {
+    return "[base64 body too large]";
+  }
+  if (!isTextContentType(mimeType)) {
+    const label = mimeType ? `base64 ${mimeType}` : "base64 binary";
+    return `[${label}; ${body.length} chars]`;
+  }
+  try {
+    const binary = atob(body);
+    return clampText(binary);
+  } catch {
+    return "[unreadable base64 body]";
+  }
+}
+
+function installDebuggerEventsOnce() {
+  if (debuggerEventsInstalled) return;
+  debuggerEventsInstalled = true;
+
+  chrome.debugger.onEvent.addListener((source, method, params: any) => {
+    const tabId = source?.tabId;
+    if (!tabId) return;
+    if (!recording || !isDeepCaptureEnabled(tabId)) return;
+
+    const state = ensureDebuggerState(tabId);
+    if (!state.attached) return;
+
+    const data = ensure(tabId);
+
+    if (method === "Network.requestWillBeSent") {
+      const p = params || {};
+      const req = p.request || {};
+      const requestId = p.requestId;
+      if (!requestId) return;
+
+      state.requests.set(requestId, {
+        id: requestId,
+        url: req.url || "",
+        method: req.method || "GET",
+        type: "debugger",
+        transport: "debugger",
+        resourceType: p.type || null,
+        startTime: Date.now(),
+        requestBody: typeof req.postData === "string" ? clampText(req.postData) : null,
+        pageUrl: p.documentURL || null
+      });
+      return;
+    }
+
+    if (method === "Network.responseReceived") {
+      const p = params || {};
+      const requestId = p.requestId;
+      if (!requestId) return;
+      const item = state.requests.get(requestId) || {
+        id: requestId,
+        url: p.response?.url || "",
+        method: "(unknown)",
+        type: "debugger",
+        transport: "debugger",
+        startTime: Date.now()
+      };
+      item.statusCode = p.response?.status ?? null;
+      item.ok = typeof item.statusCode === "number" ? item.statusCode >= 200 && item.statusCode < 400 : null;
+      item.mimeType = p.response?.mimeType || null;
+      item.responseHeaders = p.response?.headers || null;
+      state.requests.set(requestId, item);
+      return;
+    }
+
+    if (method === "Network.loadingFailed") {
+      const p = params || {};
+      const requestId = p.requestId;
+      if (!requestId) return;
+      const item = state.requests.get(requestId);
+      if (!item) return;
+      item.endTime = Date.now();
+      item.durationMs = item.startTime ? item.endTime - item.startTime : null;
+      item.error = p.errorText || "loading failed";
+      data.network.push(item);
+      state.requests.delete(requestId);
+      return;
+    }
+
+    if (method === "Network.loadingFinished") {
+      const p = params || {};
+      const requestId = p.requestId;
+      if (!requestId) return;
+      const item = state.requests.get(requestId);
+      if (!item) return;
+
+      const target = { tabId };
+      chrome.debugger.sendCommand(target, "Network.getResponseBody", { requestId }, (res: any) => {
+        const end = Date.now();
+        item.endTime = end;
+        item.durationMs = item.startTime ? end - item.startTime : null;
+
+        if (chrome.runtime.lastError || !res) {
+          const reason = chrome.runtime.lastError?.message || "response body unavailable";
+          item.responseBody = `[body unavailable] ${reason}`;
+        } else {
+          const bodyRes = res || {};
+          item.responseBody = decodeDebuggerBody(bodyRes.body, bodyRes.base64Encoded, item.mimeType || "");
+        }
+
+        data.network.push(item);
+        state.requests.delete(requestId);
+      });
+    }
+  });
+}
+
+async function attachDebugger(tabId): Promise<{ ok: boolean; error?: string | null }> {
+  installDebuggerEventsOnce();
+  const state = ensureDebuggerState(tabId);
+  if (state.attached) return { ok: true };
+
+  return new Promise<{ ok: boolean; error?: string | null }>((resolve) => {
+    chrome.debugger.attach({ tabId }, DEBUGGER_PROTOCOL_VERSION, () => {
+      const err = chrome.runtime.lastError;
+      if (err) return resolve({ ok: false, error: err.message || "attach_failed" });
+
+      chrome.debugger.sendCommand(
+        { tabId },
+        "Network.enable",
+        { maxPostDataSize: 65536 },
+        () => {
+          const err2 = chrome.runtime.lastError;
+          if (err2) return resolve({ ok: false, error: err2.message || "enable_failed" });
+          state.attached = true;
+          resolve({ ok: true });
+        }
+      );
+    });
+  });
+}
+
+async function detachDebugger(tabId): Promise<{ ok: boolean; error?: string | null }> {
+  const state = debuggerState.get(tabId);
+  if (!state || !state.attached) return { ok: true };
+  return new Promise<{ ok: boolean; error?: string | null }>((resolve) => {
+    chrome.debugger.detach({ tabId }, () => {
+      state.attached = false;
+      state.requests.clear();
+      resolve({ ok: !chrome.runtime.lastError, error: chrome.runtime.lastError?.message });
+    });
+  });
+}
+
 function ensure(tabId) {
   if (!store.has(tabId)) {
     store.set(tabId, { console: [], network: [], requests: new Map() });
@@ -325,6 +510,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "GET_DEEP_CAPTURE") {
+    const tabId = msg.tabId;
+    if (!tabId) {
+      sendResponse({ ok: false, error: "no_tab" });
+      return true;
+    }
+    const state = ensureDebuggerState(tabId);
+    sendResponse({ ok: true, enabled: !!state.enabled, attached: !!state.attached });
+    return true;
+  }
+
+  if (msg.type === "SET_DEEP_CAPTURE") {
+    (async () => {
+      const tabId = msg.tabId;
+      const enabled = !!msg.enabled;
+      if (!tabId) {
+        sendResponse({ ok: false, error: "no_tab" });
+        return;
+      }
+      const state = ensureDebuggerState(tabId);
+      state.enabled = enabled;
+
+      if (enabled && recording) {
+        const res = await attachDebugger(tabId);
+        sendResponse({ ok: !!res.ok, error: res.error || null });
+      } else {
+        const res = await detachDebugger(tabId);
+        sendResponse({ ok: !!res.ok, error: res.error || null });
+      }
+    })();
+    return true;
+  }
+
   if (msg.type === "START") {
     recording = true;
     sessionStartedAt = Date.now();
@@ -333,6 +551,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const tabId = sender.tab?.id || msg.tabId;
     if (tabId) store.set(tabId, { console: [], network: [], requests: new Map() });
 
+    if (tabId && isDeepCaptureEnabled(tabId)) {
+      void attachDebugger(tabId);
+    }
+
     sendResponse({ ok: true, clearedTabId: tabId || null });
     return true;
   }
@@ -340,6 +562,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "STOP") {
     recording = false;
     sessionEndedAt = Date.now();
+    for (const [tabId, state] of debuggerState.entries()) {
+      if (state.attached) void detachDebugger(tabId);
+    }
     sendResponse({ ok: true });
     return true;
   }
@@ -370,6 +595,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!recording) return true;
     const tabId = sender.tab?.id;
     if (!tabId) return true;
+    if (isDeepCaptureEnabled(tabId)) {
+      sendResponse({ ok: true, ignored: true, reason: "debugger_enabled" });
+      return true;
+    }
 
     const p = msg.payload || {};
     const data = ensure(tabId);
@@ -496,6 +725,7 @@ chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
     if (!recording) return;
     if (details.tabId === -1 || !details.tabId) return;
+    if (isDeepCaptureEnabled(details.tabId)) return;
 
     const data = ensure(details.tabId);
 
@@ -514,6 +744,7 @@ chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
     if (!recording) return;
     if (details.tabId === -1 || !details.tabId) return;
+    if (isDeepCaptureEnabled(details.tabId)) return;
 
     const data = ensure(details.tabId);
     const req = data.requests.get(details.requestId);
@@ -536,3 +767,11 @@ chrome.webRequest.onHeadersReceived.addListener(
   },
   { urls: ["<all_urls>"] }
 );
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (debuggerState.has(tabId)) {
+    void detachDebugger(tabId);
+    debuggerState.delete(tabId);
+  }
+  store.delete(tabId);
+});

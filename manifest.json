@@ -3,7 +3,7 @@
   "name": "My Web Debugger (MVP)",
   "version": "0.1.0",
   "description": "Collect console logs and network metadata, export as JSON.",
-  "permissions": ["storage", "tabs", "webRequest", "downloads"],
+  "permissions": ["storage", "tabs", "webRequest", "downloads", "debugger"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "dist/background.js"

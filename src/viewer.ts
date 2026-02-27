@@ -43,10 +43,12 @@
   let slowOnly = false;
   let netErrorsOnly = false;
   let conErrorsOnly = false;
+  let bodyOnly = false;
 
   const toggleSlowBtn = el<HTMLButtonElement>("toggleSlow");
   const toggleNetErrorsBtn = el<HTMLButtonElement>("toggleNetErrors");
   const toggleConErrorsBtn = el<HTMLButtonElement>("toggleConErrors");
+  const toggleBodyBtn = el<HTMLButtonElement>("toggleBody");
 
   // Detail panel
   const netDetail = el<HTMLElement>("netDetail");
@@ -94,6 +96,7 @@
     slowOnly = false;
     netErrorsOnly = false;
     conErrorsOnly = false;
+    bodyOnly = false;
     syncToggleUI();
   }
 
@@ -121,6 +124,10 @@
     if (toggleConErrorsBtn) {
       toggleConErrorsBtn.textContent = `Warn+Error: ${conErrorsOnly ? "ON" : "OFF"}`;
       toggleConErrorsBtn.classList.toggle("toggle-on", conErrorsOnly);
+    }
+    if (toggleBodyBtn) {
+      toggleBodyBtn.textContent = `Body only: ${bodyOnly ? "ON" : "OFF"}`;
+      toggleBodyBtn.classList.toggle("toggle-on", bodyOnly);
     }
   }
 
@@ -150,6 +157,13 @@
       conErrorsOnly = !conErrorsOnly;
       syncToggleUI();
       renderConsoleTable();
+    });
+  }
+  if (toggleBodyBtn) {
+    toggleBodyBtn.addEventListener("click", () => {
+      bodyOnly = !bodyOnly;
+      syncToggleUI();
+      renderNetworkTable();
     });
   }
 
@@ -523,6 +537,17 @@
   }
 
   // ---------- Network ----------
+  function hasBody(x) {
+    return x && (x.requestBody !== null && x.requestBody !== undefined || x.responseBody !== null && x.responseBody !== undefined);
+  }
+
+  function getSourceLabel(x) {
+    if (!x) return "-";
+    if (x.type === "debugger" || x.transport === "debugger") return "debugger";
+    if (x.type === "page") return x.transport || "page";
+    return "webRequest";
+  }
+
   function renderNetworkTable() {
     const items = Array.isArray(session.network) ? session.network : [];
     const q = (netSearch.value || "").trim().toLowerCase();
@@ -548,6 +573,7 @@
     });
 
     if (slowOnly) filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs >= SLOW_THRESHOLD_MS);
+    if (bodyOnly) filtered = filtered.filter((x) => hasBody(x));
     if (!Number.isNaN(minMs)) filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs >= minMs);
     if (!Number.isNaN(maxMs)) filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs <= maxMs);
 
@@ -575,9 +601,12 @@
 
     const rows = filtered.map((x) => {
       const id = String(x.id ?? `${x.method || "GET"}:${x.url || ""}:${x.startedAt || ""}`);
+      const src = getSourceLabel(x);
+      const bodyBadge = hasBody(x) ? `<span class="pill pill-body">body</span>` : "";
       return `
         <tr data-net-id="${escapeHtml(id)}" class="${getNetworkRowClass(x, id)}" title="클릭: 상세 + 콘솔 하이라이트">
           <td class="mono small">${escapeHtml(x.method || "-")}</td>
+          <td><span class="pill pill-src">${escapeHtml(src)}</span></td>
           <td>
             <span class="pill">${escapeHtml(String(x.statusGroup || "unknown"))}</span>
             <span class="pill">${escapeHtml(String(x.statusCode ?? "-"))}</span>
@@ -585,6 +614,7 @@
           <td class="mono small">${escapeHtml(String(x.durationMs ?? "-"))}ms</td>
           <td class="mono small" title="${escapeHtml(x.url || "")}">
             ${escapeHtml(x.shortUrl || x.url || "")}
+            ${bodyBadge}
             <div class="muted">${escapeHtml(x.host || "")}${escapeHtml(x.path || "")}</div>
           </td>
           <td class="mono small">${escapeHtml(x.startedAtIso || "-")}</td>
@@ -597,6 +627,7 @@
         <thead>
           <tr>
             <th>Method</th>
+            <th>Src</th>
             <th>Status</th>
             <th>Duration</th>
             <th>URL</th>
@@ -604,7 +635,7 @@
           </tr>
         </thead>
         <tbody>
-          ${rows || `<tr><td colspan="5" class="muted">결과 없음</td></tr>`}
+          ${rows || `<tr><td colspan="6" class="muted">결과 없음</td></tr>`}
         </tbody>
       </table>
     `;
@@ -699,6 +730,9 @@
     ctx: { item?: { type?: string }; kind?: "request" | "response" } = {}
   ) {
     if (v === null || v === undefined) {
+      if (ctx.item && ctx.item.type === "debugger") {
+        return "(not captured by debugger)";
+      }
       if (ctx.item && ctx.item.type !== "page") {
         return "(not captured in webRequest metadata mode)";
       }
