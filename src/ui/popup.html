@@ -39,6 +39,25 @@
         display: none;
         z-index: 10;
       }
+      #sharePanel {
+        margin-top: 10px;
+        padding: 8px;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        display: none;
+      }
+      #shareUrl {
+        width: 100%;
+        font-size: 11px;
+        margin: 6px 0;
+      }
+      .row {
+        display: flex;
+        gap: 6px;
+      }
+      .row button {
+        flex: 1 1 0;
+      }
     </style>
   </head>
   <body>
@@ -66,6 +85,14 @@
     <button id="saveServer">Save Server Settings</button>
 
     <div id="status"></div>
+    <div id="sharePanel">
+      <div style="font-size:12px; color:#444;">Last share link</div>
+      <input id="shareUrl" readonly />
+      <div class="row">
+        <button id="copyShare">Copy Link</button>
+        <button id="openShare">Open Link</button>
+      </div>
+    </div>
     <div id="toast"></div>
     <script src="popup.js"></script>
   </body>

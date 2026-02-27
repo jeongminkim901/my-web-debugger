@@ -6,12 +6,17 @@ const noteEl = document.getElementById("note") as HTMLTextAreaElement;
 const tagsEl = document.getElementById("tags") as HTMLInputElement;
 const deepCaptureEl = document.getElementById("deepCapture") as HTMLInputElement;
 const toastEl = document.getElementById("toast") as HTMLElement;
+const sharePanelEl = document.getElementById("sharePanel") as HTMLElement;
+const shareUrlEl = document.getElementById("shareUrl") as HTMLInputElement;
+const copyShareBtn = document.getElementById("copyShare") as HTMLButtonElement;
+const openShareBtn = document.getElementById("openShare") as HTMLButtonElement;
 const serverBaseUrlEl = document.getElementById("serverBaseUrl") as HTMLInputElement;
 const viewerBaseUrlEl = document.getElementById("viewerBaseUrl") as HTMLInputElement;
 const serverJwtEl = document.getElementById("serverJwt") as HTMLInputElement;
 
 let statusTimer = null as ReturnType<typeof setTimeout> | null;
 let toastTimer = null as ReturnType<typeof setTimeout> | null;
+let lastShareUrl: string | null = null;
 
 function setStatus(text: string) {
   statusEl.textContent = text;
@@ -42,6 +47,12 @@ function showToast(text: string) {
   }, 2500);
 }
 
+function showSharePanel(url: string) {
+  lastShareUrl = url;
+  if (shareUrlEl) shareUrlEl.value = url;
+  if (sharePanelEl) sharePanelEl.style.display = "block";
+}
+
 async function copyToClipboard(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -62,6 +73,21 @@ async function copyToClipboard(text: string) {
       return false;
     }
   }
+}
+
+if (copyShareBtn) {
+  copyShareBtn.addEventListener("click", async () => {
+    if (!lastShareUrl) return;
+    const ok = await copyToClipboard(lastShareUrl);
+    showToast(ok ? "Share link copied." : "Copy failed.");
+  });
+}
+
+if (openShareBtn) {
+  openShareBtn.addEventListener("click", () => {
+    if (!lastShareUrl) return;
+    chrome.tabs.create({ url: lastShareUrl });
+  });
 }
 async function getCurrentTabId() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -198,6 +224,7 @@ document.getElementById("openViewer")!.onclick = async () => {
     if (res?.ok) {
       const url = res?.url;
       if (url) {
+        showSharePanel(url);
         copyToClipboard(url).then((copied) => {
           if (copied) showToast("Share link copied.");
           else showToast("Share opened (copy failed).");
