@@ -18,8 +18,12 @@
     // Meta / extra
     const metaNote = el("metaNote");
     const metaTags = el("metaTags");
-    const errorSummaryEl = el("errorSummary");
+    const errorSummaryStats = el("errorSummaryStats");
+    const errorSummaryList = el("errorSummaryList");
     const timelineEl = el("timeline");
+    const timelineMeta = el("timelineMeta");
+    const timelineAxis = el("timelineAxis");
+    const timelineLegend = el("timelineLegend");
     const screenshotWrap = el("screenshotWrap");
     // Toggles
     const SLOW_THRESHOLD_MS = 1000;
@@ -254,7 +258,7 @@
         renderConsoleTable();
     }
     function renderErrorSummary() {
-        if (!session || !errorSummaryEl)
+        if (!session || !errorSummaryStats || !errorSummaryList)
             return;
         const net = Array.isArray(session.network) ? session.network : [];
         const con = Array.isArray(session.console) ? session.console : [];
@@ -262,7 +266,7 @@
         const net5xx = net.filter((x) => x.statusGroup === "5xx").length;
         const conErr = con.filter((x) => x.level === "error").length;
         const conWarn = con.filter((x) => x.level === "warn").length;
-        errorSummaryEl.innerHTML = `
+        errorSummaryStats.innerHTML = `
       <div class="row">
         <span class="pill">Network 4xx: ${escapeHtml(String(net4xx))}</span>
         <span class="pill">Network 5xx: ${escapeHtml(String(net5xx))}</span>
@@ -270,20 +274,90 @@
         <span class="pill">Console warn: ${escapeHtml(String(conWarn))}</span>
       </div>
     `;
+        const netErrors = net
+            .filter((x) => typeof x.statusCode === "number" && x.statusCode >= 400)
+            .map((x) => ({
+            key: x.shortUrl || x.url || "(unknown)",
+            code: x.statusCode
+        }));
+        const netCounts = new Map();
+        for (const e of netErrors) {
+            const k = `${e.code}|${e.key}`;
+            netCounts.set(k, (netCounts.get(k) || 0) + 1);
+        }
+        const topNet = [...netCounts.entries()]
+            .map(([k, c]) => {
+            const [code, url] = k.split("|");
+            return { code, url, count: c };
+        })
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+        const conErrors = con
+            .filter((x) => x.level === "error" || x.level === "warn")
+            .map((x) => ({ lvl: x.level || "log", msg: prettyArgs(x.args) }));
+        const conCounts = new Map();
+        for (const e of conErrors) {
+            const k = `${e.lvl}|${e.msg.slice(0, 120)}`;
+            conCounts.set(k, (conCounts.get(k) || 0) + 1);
+        }
+        const topCon = [...conCounts.entries()]
+            .map(([k, c]) => {
+            const [lvl, msg] = k.split("|");
+            return { lvl, msg, count: c };
+        })
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+        const netList = topNet.map((x) => `
+      <div class="error-item">
+        <span class="pill">${escapeHtml(String(x.code))}</span>
+        <div class="error-url mono">${escapeHtml(x.url)}</div>
+        <span class="pill">${escapeHtml(String(x.count))}</span>
+      </div>
+    `).join("");
+        const conList = topCon.map((x) => `
+      <div class="error-item">
+        <span class="pill">${escapeHtml(String(x.lvl))}</span>
+        <div class="error-url mono">${escapeHtml(x.msg)}</div>
+        <span class="pill">${escapeHtml(String(x.count))}</span>
+      </div>
+    `).join("");
+        errorSummaryList.innerHTML =
+            (netList ? `<div class="muted small">Network</div>${netList}` : `<div class="muted small">Network: none</div>`)
+                + (conList ? `<div class="muted small" style="margin-top:8px;">Console</div>${conList}` : `<div class="muted small" style="margin-top:8px;">Console: none</div>`);
     }
     function renderTimeline() {
-        if (!session || !timelineEl)
+        if (!session || !timelineEl || !timelineAxis || !timelineMeta || !timelineLegend)
             return;
         const items = Array.isArray(session.network) ? session.network : [];
         const withTimes = items.filter((x) => typeof x.startedAt === "number");
         if (!withTimes.length) {
             timelineEl.innerHTML = `<div class="muted" style="padding:10px;">No timeline data</div>`;
+            timelineAxis.innerHTML = "";
+            timelineMeta.textContent = "";
+            timelineLegend.innerHTML = "";
             return;
         }
         const minT = Math.min(...withTimes.map((x) => x.startedAt ?? 0));
         const maxT = Math.max(...withTimes.map((x) => (x.endedAt ?? x.startedAt ?? 0)));
         const range = Math.max(1, maxT - minT);
         timelineEl.innerHTML = "";
+        timelineAxis.innerHTML = `
+      <span>${escapeHtml(new Date(minT).toISOString())}</span>
+      <span>${escapeHtml(new Date(minT + Math.floor(range / 2)).toISOString())}</span>
+      <span>${escapeHtml(new Date(maxT).toISOString())}</span>
+    `;
+        timelineMeta.textContent = `${withTimes.length} requests · range ${(range / 1000).toFixed(2)}s`;
+        timelineLegend.innerHTML = `
+      <span><i class="legend-dot legend-ok"></i> OK</span>
+      <span><i class="legend-dot legend-warn"></i> Slow</span>
+      <span><i class="legend-dot legend-err"></i> Error</span>
+    `;
+        [0.25, 0.5, 0.75].forEach((p) => {
+            const g = document.createElement("div");
+            g.className = "timeline-grid";
+            g.style.left = `${p * 100}%`;
+            timelineEl.appendChild(g);
+        });
         withTimes.slice(0, 60).forEach((x, i) => {
             const s = x.startedAt ?? minT;
             const e = x.endedAt ?? s;
