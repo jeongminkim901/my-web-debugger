@@ -47,6 +47,8 @@
     .lvl-info  { border-color: rgba(59, 130, 246, 0.65); color: rgba(147, 197, 253, 0.95); }
     .lvl-log   { border-color: rgba(148, 163, 184, 0.55); color: rgba(226, 232, 240, 0.90); }
     .lvl-debug { border-color: rgba(16, 185, 129, 0.60); color: rgba(110, 231, 183, 0.95); }
+    .pill-src  { border-color: rgba(59, 130, 246, 0.55); color: rgba(147, 197, 253, 0.95); }
+    .pill-body { border-color: rgba(16, 185, 129, 0.60); color: rgba(110, 231, 183, 0.95); }
 
     .toggle-on {
       border-color: rgba(125, 211, 252, 0.55);
@@ -200,6 +202,7 @@
 
       <button id="toggleSlow" class="pill btn" type="button" title="only show slow requests">Slow only: OFF</button>
       <button id="toggleNetErrors" class="pill btn" type="button" title="only show 4xx/5xx">Errors only: OFF</button>
+      <button id="toggleBody" class="pill btn" type="button" title="only show requests with body">Body only: OFF</button>
 
       <span class="right muted" id="netCount"></span>
     </div>

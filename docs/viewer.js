@@ -34,9 +34,11 @@
     let slowOnly = false;
     let netErrorsOnly = false;
     let conErrorsOnly = false;
+    let bodyOnly = false;
     const toggleSlowBtn = el("toggleSlow");
     const toggleNetErrorsBtn = el("toggleNetErrors");
     const toggleConErrorsBtn = el("toggleConErrors");
+    const toggleBodyBtn = el("toggleBody");
     // Detail panel
     const netDetail = el("netDetail");
     let currentNetMap = new Map(); // id -> item
@@ -81,6 +83,7 @@
         slowOnly = false;
         netErrorsOnly = false;
         conErrorsOnly = false;
+        bodyOnly = false;
         syncToggleUI();
     }
     function resetFilters() {
@@ -116,6 +119,10 @@
             toggleConErrorsBtn.textContent = `Warn+Error: ${conErrorsOnly ? "ON" : "OFF"}`;
             toggleConErrorsBtn.classList.toggle("toggle-on", conErrorsOnly);
         }
+        if (toggleBodyBtn) {
+            toggleBodyBtn.textContent = `Body only: ${bodyOnly ? "ON" : "OFF"}`;
+            toggleBodyBtn.classList.toggle("toggle-on", bodyOnly);
+        }
     }
     // Re-render on control changes
     [netSearch, hostFilter, statusFilter, methodFilter, sortBy, durMin, durMax, conSearch, levelFilter].forEach(ctrl => {
@@ -142,6 +149,13 @@
             conErrorsOnly = !conErrorsOnly;
             syncToggleUI();
             renderConsoleTable();
+        });
+    }
+    if (toggleBodyBtn) {
+        toggleBodyBtn.addEventListener("click", () => {
+            bodyOnly = !bodyOnly;
+            syncToggleUI();
+            renderNetworkTable();
         });
     }
     // ✅ Network row click (detail + cross highlight)
@@ -489,6 +503,18 @@
         return "pill pill-level lvl-log";
     }
     // ---------- Network ----------
+    function hasBody(x) {
+        return x && (x.requestBody !== null && x.requestBody !== undefined || x.responseBody !== null && x.responseBody !== undefined);
+    }
+    function getSourceLabel(x) {
+        if (!x)
+            return "-";
+        if (x.type === "debugger" || x.transport === "debugger")
+            return "debugger";
+        if (x.type === "page")
+            return x.transport || "page";
+        return "webRequest";
+    }
     function renderNetworkTable() {
         const items = Array.isArray(session.network) ? session.network : [];
         const q = (netSearch.value || "").trim().toLowerCase();
@@ -510,6 +536,8 @@
         });
         if (slowOnly)
             filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs >= SLOW_THRESHOLD_MS);
+        if (bodyOnly)
+            filtered = filtered.filter((x) => hasBody(x));
         if (!Number.isNaN(minMs))
             filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs >= minMs);
         if (!Number.isNaN(maxMs))
@@ -538,9 +566,12 @@
         }
         const rows = filtered.map((x) => {
             const id = String(x.id ?? `${x.method || "GET"}:${x.url || ""}:${x.startedAt || ""}`);
+            const src = getSourceLabel(x);
+            const bodyBadge = hasBody(x) ? `<span class="pill pill-body">body</span>` : "";
             return `
         <tr data-net-id="${escapeHtml(id)}" class="${getNetworkRowClass(x, id)}" title="클릭: 상세 + 콘솔 하이라이트">
           <td class="mono small">${escapeHtml(x.method || "-")}</td>
+          <td><span class="pill pill-src">${escapeHtml(src)}</span></td>
           <td>
             <span class="pill">${escapeHtml(String(x.statusGroup || "unknown"))}</span>
             <span class="pill">${escapeHtml(String(x.statusCode ?? "-"))}</span>
@@ -548,6 +579,7 @@
           <td class="mono small">${escapeHtml(String(x.durationMs ?? "-"))}ms</td>
           <td class="mono small" title="${escapeHtml(x.url || "")}">
             ${escapeHtml(x.shortUrl || x.url || "")}
+            ${bodyBadge}
             <div class="muted">${escapeHtml(x.host || "")}${escapeHtml(x.path || "")}</div>
           </td>
           <td class="mono small">${escapeHtml(x.startedAtIso || "-")}</td>
@@ -559,6 +591,7 @@
         <thead>
           <tr>
             <th>Method</th>
+            <th>Src</th>
             <th>Status</th>
             <th>Duration</th>
             <th>URL</th>
@@ -566,7 +599,7 @@
           </tr>
         </thead>
         <tbody>
-          ${rows || `<tr><td colspan="5" class="muted">결과 없음</td></tr>`}
+          ${rows || `<tr><td colspan="6" class="muted">결과 없음</td></tr>`}
         </tbody>
       </table>
     `;
@@ -650,6 +683,9 @@
     }
     function formatBody(v, ctx = {}) {
         if (v === null || v === undefined) {
+            if (ctx.item && ctx.item.type === "debugger") {
+                return "(not captured by debugger)";
+            }
             if (ctx.item && ctx.item.type !== "page") {
                 return "(not captured in webRequest metadata mode)";
             }
@@ -754,7 +790,16 @@
         }[c]));
     }
     // ---------- Auto load from extension ----------
-    function decodeUrlPayload(payload) {
+    function base64UrlToBytes(b64url) {
+        const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = b64 + "===".slice((b64.length + 3) % 4);
+        const binary = atob(padded);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++)
+            bytes[i] = binary.charCodeAt(i);
+        return bytes;
+    }
+    async function decodeUrlPayload(payload) {
         try {
             const raw = (() => {
                 try {
@@ -764,20 +809,24 @@
                     return payload;
                 }
             })();
-            const b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
-            const padded = b64 + "===".slice((b64.length + 3) % 4);
-            const binary = atob(padded);
-            try {
-                const bytes = new Uint8Array(binary.length);
-                for (let i = 0; i < binary.length; i++)
-                    bytes[i] = binary.charCodeAt(i);
-                return new TextDecoder().decode(bytes);
+            let mode = "raw";
+            let data = raw;
+            if (raw.startsWith("gz:")) {
+                mode = "gz";
+                data = raw.slice(3);
             }
-            catch {
-                // Fallback for older browsers.
-                // eslint-disable-next-line no-undef
-                return decodeURIComponent(escape(binary));
+            else if (raw.startsWith("raw:")) {
+                data = raw.slice(4);
             }
+            const bytes = base64UrlToBytes(data);
+            if (mode === "gz") {
+                if (typeof DecompressionStream === "undefined")
+                    return null;
+                const ds = new DecompressionStream("gzip");
+                const decompressed = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+                return new TextDecoder().decode(new Uint8Array(decompressed));
+            }
+            return new TextDecoder().decode(bytes);
         }
         catch {
             return null;
@@ -790,12 +839,22 @@
         const n = Number(t);
         return Number.isFinite(n) ? n : NaN;
     }
-    function loadFromHashIfPossible() {
-        const hash = location.hash || "";
+    function getLocationSafe() {
+        if (typeof location !== "undefined")
+            return location;
+        if (typeof window !== "undefined" && window.location)
+            return window.location;
+        return null;
+    }
+    async function loadFromHashIfPossible() {
+        const loc = getLocationSafe();
+        if (!loc)
+            return false;
+        const hash = loc.hash || "";
         if (!hash.startsWith("#data="))
             return false;
         const payload = hash.slice("#data=".length);
-        const json = decodeUrlPayload(payload);
+        const json = await decodeUrlPayload(payload);
         if (!json) {
             try {
                 alert("Failed to decode URL data. Try the downloaded JSON file.");
@@ -821,7 +880,10 @@
         }
     }
     async function autoLoadFromExtensionIfPossible() {
-        const qs = new URLSearchParams(location.search);
+        const loc = getLocationSafe();
+        if (!loc)
+            return false;
+        const qs = new URLSearchParams(loc.search);
         const tabIdRaw = qs.get("tabId");
         if (!tabIdRaw)
             return false;
@@ -858,6 +920,9 @@
             formatBody
         };
     }
-    autoLoadFromExtensionIfPossible();
-    loadFromHashIfPossible();
+    (async () => {
+        const loaded = await autoLoadFromExtensionIfPossible();
+        if (!loaded)
+            await loadFromHashIfPossible();
+    })();
 })();
