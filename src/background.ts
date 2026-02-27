@@ -455,6 +455,7 @@ function base64UrlFromBytes(bytes) {
 
 async function encodeForUrlPayload(text) {
   const bytes = new TextEncoder().encode(text);
+  const rawPayload = `raw:${base64UrlFromBytes(bytes)}`;
 
   // Prefer gzip compression when available.
   try {
@@ -463,14 +464,15 @@ async function encodeForUrlPayload(text) {
       const compressed = await new Response(
         new Blob([bytes]).stream().pipeThrough(cs)
       ).arrayBuffer();
-      const b64 = base64UrlFromBytes(new Uint8Array(compressed));
-      return `gz:${b64}`;
+      const gzPayload = `gz:${base64UrlFromBytes(new Uint8Array(compressed))}`;
+      const payload = (gzPayload.length < rawPayload.length) ? gzPayload : rawPayload;
+      return { payload, byteLength: new TextEncoder().encode(payload).length };
     }
   } catch {
     // fallback to raw
   }
 
-  return `raw:${base64UrlFromBytes(bytes)}`;
+  return { payload: rawPayload, byteLength: new TextEncoder().encode(rawPayload).length };
 }
 
 async function captureScreenshot(tab) {
@@ -702,8 +704,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const inlineSafe = isInlineSafe(json, exportData.screenshot);
 
         if (inlineSafe) {
-          const payload = await encodeForUrlPayload(json);
-          const viewerUrl = `${PUBLIC_VIEWER_URL}#data=${payload}`;
+          const encoded = await encodeForUrlPayload(json);
+          const payloadBytes = encoded?.byteLength ?? Number.POSITIVE_INFINITY;
+          if (payloadBytes > PUBLIC_VIEWER_MAX_INLINE_BYTES) {
+            // Fallback: download JSON for large payloads.
+            const filename = makeFilename(exportData);
+            const dataUrl = "data:application/json;charset=utf-8," + encodeURIComponent(json);
+
+            chrome.downloads.download(
+              { url: dataUrl, filename, saveAs: true },
+              (downloadId) => {
+                const err = chrome.runtime.lastError;
+                if (err || !downloadId) {
+                  sendResponse({ ok: false, error: err?.message || "download_failed" });
+                  return;
+                }
+                const viewerUrl = `${PUBLIC_VIEWER_URL}?t=${Date.now()}`;
+                chrome.tabs.create({ url: viewerUrl }, () => {
+                  sendResponse({ ok: true, downloadId, filename, public: true, inline: false });
+                });
+              }
+            );
+            return;
+          }
+
+          const viewerUrl = `${PUBLIC_VIEWER_URL}#data=${encoded.payload}`;
           chrome.tabs.create({ url: viewerUrl }, () => {
             sendResponse({ ok: true, public: true, inline: true });
           });
