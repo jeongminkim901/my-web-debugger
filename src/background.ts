@@ -448,10 +448,29 @@ function base64FromBytes(bytes) {
   return btoa(binary);
 }
 
-function encodeForUrlPayload(text) {
-  const bytes = new TextEncoder().encode(text);
+function base64UrlFromBytes(bytes) {
   const b64 = base64FromBytes(bytes);
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function encodeForUrlPayload(text) {
+  const bytes = new TextEncoder().encode(text);
+
+  // Prefer gzip compression when available.
+  try {
+    if (typeof CompressionStream !== "undefined") {
+      const cs = new CompressionStream("gzip");
+      const compressed = await new Response(
+        new Blob([bytes]).stream().pipeThrough(cs)
+      ).arrayBuffer();
+      const b64 = base64UrlFromBytes(new Uint8Array(compressed));
+      return `gz:${b64}`;
+    }
+  } catch {
+    // fallback to raw
+  }
+
+  return `raw:${base64UrlFromBytes(bytes)}`;
 }
 
 async function captureScreenshot(tab) {
@@ -683,7 +702,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const inlineSafe = isInlineSafe(json, exportData.screenshot);
 
         if (inlineSafe) {
-          const payload = encodeForUrlPayload(json);
+          const payload = await encodeForUrlPayload(json);
           const viewerUrl = `${PUBLIC_VIEWER_URL}#data=${payload}`;
           chrome.tabs.create({ url: viewerUrl }, () => {
             sendResponse({ ok: true, public: true, inline: true });

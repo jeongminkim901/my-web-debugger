@@ -837,23 +837,42 @@
   }
 
   // ---------- Auto load from extension ----------
-  function decodeUrlPayload(payload) {
+  function base64UrlToBytes(b64url) {
+    const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "===".slice((b64.length + 3) % 4);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function decodeUrlPayload(payload) {
     try {
       const raw = (() => {
         try { return decodeURIComponent(payload); } catch { return payload; }
       })();
-      const b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
-      const padded = b64 + "===".slice((b64.length + 3) % 4);
-      const binary = atob(padded);
-      try {
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return new TextDecoder().decode(bytes);
-      } catch {
-        // Fallback for older browsers.
-        // eslint-disable-next-line no-undef
-        return decodeURIComponent(escape(binary));
+
+      let mode = "raw";
+      let data = raw;
+      if (raw.startsWith("gz:")) {
+        mode = "gz";
+        data = raw.slice(3);
+      } else if (raw.startsWith("raw:")) {
+        data = raw.slice(4);
       }
+
+      const bytes = base64UrlToBytes(data);
+
+      if (mode === "gz") {
+        if (typeof DecompressionStream === "undefined") return null;
+        const ds = new DecompressionStream("gzip");
+        const decompressed = await new Response(
+          new Blob([bytes]).stream().pipeThrough(ds)
+        ).arrayBuffer();
+        return new TextDecoder().decode(new Uint8Array(decompressed));
+      }
+
+      return new TextDecoder().decode(bytes);
     } catch {
       return null;
     }
@@ -866,11 +885,19 @@
     return Number.isFinite(n) ? n : NaN;
   }
 
-  function loadFromHashIfPossible() {
-    const hash = location.hash || "";
+  function getLocationSafe() {
+    if (typeof location !== "undefined") return location;
+    if (typeof window !== "undefined" && window.location) return window.location;
+    return null;
+  }
+
+  async function loadFromHashIfPossible() {
+    const loc = getLocationSafe();
+    if (!loc) return false;
+    const hash = loc.hash || "";
     if (!hash.startsWith("#data=")) return false;
     const payload = hash.slice("#data=".length);
-    const json = decodeUrlPayload(payload);
+    const json = await decodeUrlPayload(payload);
     if (!json) {
       try { alert("Failed to decode URL data. Try the downloaded JSON file."); } catch {}
       return false;
@@ -890,7 +917,9 @@
   }
 
   async function autoLoadFromExtensionIfPossible() {
-    const qs = new URLSearchParams(location.search);
+    const loc = getLocationSafe();
+    if (!loc) return false;
+    const qs = new URLSearchParams(loc.search);
     const tabIdRaw = qs.get("tabId");
     if (!tabIdRaw) return false;
 
@@ -925,6 +954,8 @@
     };
   }
 
-  autoLoadFromExtensionIfPossible();
-  loadFromHashIfPossible();
+  (async () => {
+    const loaded = await autoLoadFromExtensionIfPossible();
+    if (!loaded) await loadFromHashIfPossible();
+  })();
 })();

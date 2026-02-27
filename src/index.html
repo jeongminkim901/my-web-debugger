@@ -64,6 +64,8 @@
     .lvl-info  { border-color: rgba(59, 130, 246, 0.60); color: rgba(147, 197, 253, 0.95); }
     .lvl-log   { border-color: rgba(148, 163, 184, 0.50); color: rgba(226, 232, 240, 0.90); }
     .lvl-debug { border-color: rgba(16, 185, 129, 0.55); color: rgba(110, 231, 183, 0.95); }
+    .pill-src  { border-color: rgba(59, 130, 246, 0.55); color: rgba(147, 197, 253, 0.95); }
+    .pill-body { border-color: rgba(16, 185, 129, 0.55); color: rgba(110, 231, 183, 0.95); }
   </style>
 </head>
 
@@ -128,6 +130,9 @@
       <button id="toggleSlow" class="pill btn" type="button" title="duration이 긴 요청만 보기">
         Slow only: OFF
       </button>
+      <button id="toggleBody" class="pill btn" type="button" title="body 있는 요청만 보기">
+        Body only: OFF
+      </button>
 
       <span class="right muted" id="netCount"></span>
     </div>
@@ -173,7 +178,9 @@
   // ✅ 느린 요청 threshold + 토글 상태
   const SLOW_THRESHOLD_MS = 1000;
   let slowOnly = false;
+  let bodyOnly = false;
   const toggleSlowBtn = el("toggleSlow");
+  const toggleBodyBtn = el("toggleBody");
 
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
@@ -195,13 +202,56 @@
       try {
         session = JSON.parse(reader.result);
         slowOnly = false;
+        bodyOnly = false;
         if (toggleSlowBtn) toggleSlowBtn.textContent = "Slow only: OFF";
+        if (toggleBodyBtn) toggleBodyBtn.textContent = "Body only: OFF";
         renderAll();
       } catch (e) {
         alert("JSON 파싱 실패: 파일이 올바른지 확인해줘!");
       }
     };
     reader.readAsText(file);
+  }
+
+  function base64UrlToBytes(b64url) {
+    const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "===".slice((b64.length + 3) % 4);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function decodeUrlPayload(payload) {
+    try {
+      const raw = (() => {
+        try { return decodeURIComponent(payload); } catch { return payload; }
+      })();
+
+      let mode = "raw";
+      let data = raw;
+      if (raw.startsWith("gz:")) {
+        mode = "gz";
+        data = raw.slice(3);
+      } else if (raw.startsWith("raw:")) {
+        data = raw.slice(4);
+      }
+
+      const bytes = base64UrlToBytes(data);
+
+      if (mode === "gz") {
+        if (typeof DecompressionStream === "undefined") return null;
+        const ds = new DecompressionStream("gzip");
+        const decompressed = await new Response(
+          new Blob([bytes]).stream().pipeThrough(ds)
+        ).arrayBuffer();
+        return new TextDecoder().decode(new Uint8Array(decompressed));
+      }
+
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return null;
+    }
   }
 
   // Re-render on control changes
@@ -215,6 +265,13 @@
     toggleSlowBtn.addEventListener("click", () => {
       slowOnly = !slowOnly;
       toggleSlowBtn.textContent = `Slow only: ${slowOnly ? "ON" : "OFF"}`;
+      renderNetworkTable();
+    });
+  }
+  if (toggleBodyBtn) {
+    toggleBodyBtn.addEventListener("click", () => {
+      bodyOnly = !bodyOnly;
+      toggleBodyBtn.textContent = `Body only: ${bodyOnly ? "ON" : "OFF"}`;
       renderNetworkTable();
     });
   }
@@ -318,6 +375,17 @@
     return "pill pill-level lvl-log";
   }
 
+  function hasBody(x) {
+    return x && ((x.requestBody !== null && x.requestBody !== undefined) || (x.responseBody !== null && x.responseBody !== undefined));
+  }
+
+  function getSourceLabel(x) {
+    if (!x) return "-";
+    if (x.type === "debugger" || x.transport === "debugger") return "debugger";
+    if (x.type === "page") return x.transport || "page";
+    return "webRequest";
+  }
+
   function renderNetworkTable() {
     const items = Array.isArray(session.network) ? session.network : [];
     const q = (netSearch.value || "").trim().toLowerCase();
@@ -332,6 +400,9 @@
 
     if (slowOnly) {
       filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs >= SLOW_THRESHOLD_MS);
+    }
+    if (bodyOnly) {
+      filtered = filtered.filter(x => hasBody(x));
     }
 
     const sort = sortBy.value;
@@ -350,9 +421,13 @@
 
     el("netCount").textContent = `${filtered.length} / ${items.length}`;
 
-    const rows = filtered.map(x => `
+    const rows = filtered.map(x => {
+      const src = getSourceLabel(x);
+      const bodyBadge = hasBody(x) ? `<span class="pill pill-body">body</span>` : "";
+      return `
       <tr class="${getNetworkRowClass(x)}">
         <td class="mono small">${escapeHtml(x.method || "-")}</td>
+        <td><span class="pill pill-src">${escapeHtml(src)}</span></td>
         <td>
           <span class="pill">${escapeHtml(String(x.statusGroup || "unknown"))}</span>
           <span class="pill">${escapeHtml(String(x.statusCode ?? "-"))}</span>
@@ -360,17 +435,20 @@
         <td class="mono small">${escapeHtml(String(x.durationMs ?? "-"))}ms</td>
         <td class="mono small" title="${escapeHtml(x.url || "")}">
           ${escapeHtml(x.shortUrl || x.url || "")}
+          ${bodyBadge}
           <div class="muted">${escapeHtml(x.host || "")}${escapeHtml(x.path || "")}</div>
         </td>
         <td class="mono small">${escapeHtml(x.startedAtIso || "-")}</td>
       </tr>
-    `).join("");
+      `;
+    }).join("");
 
     el("network").innerHTML = `
       <table>
         <thead>
           <tr>
             <th>Method</th>
+            <th>Src</th>
             <th>Status</th>
             <th>Duration</th>
             <th>URL</th>
@@ -378,7 +456,7 @@
           </tr>
         </thead>
         <tbody>
-          ${rows || `<tr><td colspan="5" class="muted">결과 없음</td></tr>`}
+          ${rows || `<tr><td colspan="6" class="muted">결과 없음</td></tr>`}
         </tbody>
       </table>
     `;
@@ -454,6 +532,29 @@
       "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
     }[c]));
   }
+
+  async function loadFromHashIfPossible() {
+    const hash = location.hash || "";
+    if (!hash.startsWith("#data=")) return false;
+    const payload = hash.slice("#data=".length);
+    const json = await decodeUrlPayload(payload);
+    if (!json) return false;
+    try {
+      session = JSON.parse(json);
+      slowOnly = false;
+      bodyOnly = false;
+      if (toggleSlowBtn) toggleSlowBtn.textContent = "Slow only: OFF";
+      if (toggleBodyBtn) toggleBodyBtn.textContent = "Body only: OFF";
+      renderAll();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  (async () => {
+    await loadFromHashIfPossible();
+  })();
 </script>
 </body>
 </html>
