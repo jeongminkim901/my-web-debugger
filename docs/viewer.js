@@ -19,6 +19,8 @@
     const durMax = el("durMax");
     const conSearch = el("conSearch");
     const levelFilter = el("levelFilter");
+    const wsSearch = el("wsSearch");
+    const wsDirFilter = el("wsDirFilter");
     // Meta / extra
     const metaNote = el("metaNote");
     const metaTags = el("metaTags");
@@ -162,6 +164,10 @@
             conSearch.value = "";
         if (levelFilter)
             levelFilter.value = "all";
+        if (wsSearch)
+            wsSearch.value = "";
+        if (wsDirFilter)
+            wsDirFilter.value = "all";
     }
     function syncToggleUI() {
         if (toggleSlowBtn) {
@@ -182,7 +188,9 @@
         }
     }
     // Re-render on control changes
-    [netSearch, hostFilter, statusFilter, methodFilter, sortBy, durMin, durMax, conSearch, levelFilter].forEach(ctrl => {
+    const controls = [netSearch, hostFilter, statusFilter, methodFilter, sortBy, durMin, durMax, conSearch, levelFilter, wsSearch, wsDirFilter]
+        .filter(Boolean);
+    controls.forEach((ctrl) => {
         ctrl.addEventListener("input", () => { renderTables(); });
         ctrl.addEventListener("change", () => { renderTables(); });
     });
@@ -348,6 +356,7 @@
             return;
         renderNetworkTable();
         renderConsoleTable();
+        renderWebsocketTable();
     }
     function renderErrorSummary() {
         if (!session || !errorSummaryStats || !errorSummaryList)
@@ -804,6 +813,55 @@
         </thead>
         <tbody>
           ${rows || `<tr><td colspan="3" class="muted">결과 없음</td></tr>`}
+        </tbody>
+      </table>
+    `;
+    }
+    // ---------- WebSocket ----------
+    function formatWsPayload(payload) {
+        if (payload === null || payload === undefined)
+            return "-";
+        const text = String(payload);
+        if (text.length <= 200)
+            return escapeHtml(text);
+        return `${escapeHtml(text.slice(0, 200))}...`;
+    }
+    function renderWebsocketTable() {
+        const items = Array.isArray(session.websockets) ? session.websockets : [];
+        const q = (wsSearch?.value || "").trim().toLowerCase();
+        const dir = wsDirFilter?.value || "all";
+        const filtered = items.filter((x) => {
+            const hay = `${x.url || ""} ${x.payload || ""}`.toLowerCase();
+            const okQuery = q ? hay.includes(q) : true;
+            const okDir = (dir === "all") ? true : (String(x.direction || "") === dir);
+            return okQuery && okDir;
+        });
+        el("wsCount").textContent = `${filtered.length} / ${items.length}`;
+        const rows = filtered.map((x) => {
+            const timeIso = x.timestamp ? new Date(x.timestamp).toISOString() : "-";
+            return `
+        <tr>
+          <td class="mono small">${escapeHtml(String(x.direction || "-"))}</td>
+          <td class="mono small">${escapeHtml(String(x.opcode ?? "-"))}</td>
+          <td class="mono small" title="${escapeHtml(x.url || "")}">${escapeHtml(x.url || "")}</td>
+          <td class="mono small" title="${escapeHtml(String(x.payload || ""))}">${formatWsPayload(x.payload)}</td>
+          <td class="mono small">${escapeHtml(timeIso)}</td>
+        </tr>
+      `;
+        }).join("");
+        el("websockets").innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Dir</th>
+            <th>Opcode</th>
+            <th>URL</th>
+            <th>Payload</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || `<tr><td colspan="5" class="muted">No websocket frames</td></tr>`}
         </tbody>
       </table>
     `;

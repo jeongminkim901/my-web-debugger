@@ -254,6 +254,20 @@
     </div>
     <div id="console"></div>
 
+    <h2>WebSocket</h2>
+    <div class="row card">
+      <input id="wsSearch" placeholder="search url / payload" />
+      <select id="wsDirFilter">
+        <option value="all">direction: all</option>
+        <option value="open">open</option>
+        <option value="sent">sent</option>
+        <option value="received">received</option>
+        <option value="close">close</option>
+      </select>
+      <span class="right muted" id="wsCount"></span>
+    </div>
+    <div id="websockets"></div>
+
     <details class="card">
       <summary><b>Raw JSON</b> <span class="muted">(original data)</span></summary>
       <pre id="raw" class="mono small" style="white-space: pre-wrap; word-break: break-word;"></pre>

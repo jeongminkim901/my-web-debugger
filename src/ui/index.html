@@ -166,9 +166,23 @@
       </select>
       <span class="right muted" id="conCount"></span>
     </div>
-    <div id="console"></div>
+  <div id="console"></div>
 
-    <details class="card">
+  <h2>WebSocket</h2>
+  <div class="row card">
+    <input id="wsSearch" placeholder="url / payload 검색" />
+    <select id="wsDirFilter">
+      <option value="all">direction: all</option>
+      <option value="open">open</option>
+      <option value="sent">sent</option>
+      <option value="received">received</option>
+      <option value="close">close</option>
+    </select>
+    <span class="right muted" id="wsCount"></span>
+  </div>
+  <div id="websockets"></div>
+
+  <details class="card">
       <summary><b>Raw JSON</b> <span class="muted">(원본 데이터 보기)</span></summary>
       <pre id="raw" class="mono small" style="white-space: pre-wrap; word-break: break-word;"></pre>
     </details>
@@ -193,6 +207,8 @@
   const sortBy = el("sortBy");
   const conSearch = el("conSearch");
   const levelFilter = el("levelFilter");
+  const wsSearch = el("wsSearch");
+  const wsDirFilter = el("wsDirFilter");
 
   // ✅ 느린 요청 threshold + 토글 상태
   const SLOW_THRESHOLD_MS = 1000;
@@ -356,7 +372,7 @@
   }
 
   // Re-render on control changes
-  [netSearch, statusFilter, sortBy, conSearch, levelFilter].forEach(ctrl => {
+  [netSearch, statusFilter, sortBy, conSearch, levelFilter, wsSearch, wsDirFilter].forEach(ctrl => {
     ctrl.addEventListener("input", renderTables);
     ctrl.addEventListener("change", renderTables);
   });
@@ -448,6 +464,7 @@
   function renderTables() {
     renderNetworkTable();
     renderConsoleTable();
+    renderWebsocketTable();
   }
 
   // ✅ Network 행 강조
@@ -604,6 +621,58 @@
         </thead>
         <tbody>
           ${rows || `<tr><td colspan="3" class="muted">결과 없음</td></tr>`}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function formatWsPayload(payload) {
+    if (payload === null || payload === undefined) return "-";
+    const text = String(payload);
+    if (text.length <= 200) return escapeHtml(text);
+    return `${escapeHtml(text.slice(0, 200))}...`;
+  }
+
+  function renderWebsocketTable() {
+    const items = Array.isArray(session.websockets) ? session.websockets : [];
+    const q = (wsSearch.value || "").trim().toLowerCase();
+    const dir = wsDirFilter.value || "all";
+
+    const filtered = items.filter((x) => {
+      const hay = `${x.url || ""} ${x.payload || ""}`.toLowerCase();
+      const okQuery = q ? hay.includes(q) : true;
+      const okDir = (dir === "all") ? true : (String(x.direction || "") === dir);
+      return okQuery && okDir;
+    });
+
+    el("wsCount").textContent = `${filtered.length} / ${items.length}`;
+
+    const rows = filtered.map((x) => {
+      const timeIso = x.timestamp ? new Date(x.timestamp).toISOString() : "-";
+      return `
+        <tr>
+          <td class="mono small">${escapeHtml(String(x.direction || "-"))}</td>
+          <td class="mono small">${escapeHtml(String(x.opcode ?? "-"))}</td>
+          <td class="mono small" title="${escapeHtml(x.url || "")}">${escapeHtml(x.url || "")}</td>
+          <td class="mono small" title="${escapeHtml(String(x.payload || ""))}">${formatWsPayload(x.payload)}</td>
+          <td class="mono small">${escapeHtml(timeIso)}</td>
+        </tr>
+      `;
+    }).join("");
+
+    el("websockets").innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Dir</th>
+            <th>Opcode</th>
+            <th>URL</th>
+            <th>Payload</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || `<tr><td colspan="5" class="muted">No websocket frames</td></tr>`}
         </tbody>
       </table>
     `;
