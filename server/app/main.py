@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 DB_PATH = os.getenv("DB_PATH", "/data/app.db")
@@ -19,11 +20,28 @@ JWT_ALG = os.getenv("JWT_ALG", "HS256")
 CLEANUP_INTERVAL_SECONDS = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "0"))
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "30"))
 RATE_LIMIT_WINDOW_SECONDS = 60
+MAX_PAYLOAD_BYTES = int(os.getenv("MAX_PAYLOAD_BYTES", "10000000"))
 
 _rate_limit_lock = threading.Lock()
 _rate_limit_state: dict[str, list[int]] = {}
 
 app = FastAPI(title="Share API", version="0.1.0")
+
+
+@app.middleware("http")
+async def _limit_request_size(request: Request, call_next):
+    if request.method in {"POST", "PUT", "PATCH"}:
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_PAYLOAD_BYTES:
+                    return JSONResponse(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        content={"detail": "Payload too large"},
+                    )
+            except ValueError:
+                pass
+    return await call_next(request)
 
 
 def _connect() -> sqlite3.Connection:
@@ -86,6 +104,11 @@ def _startup() -> None:
     if CLEANUP_INTERVAL_SECONDS > 0:
         t = threading.Thread(target=_cleanup_loop, daemon=True)
         t.start()
+
+
+@app.get("/health")
+def health() -> dict:
+    return {"ok": True, "ts": _now_ts()}
 
 
 def _require_auth(authorization: Optional[str] = Header(default=None)) -> None:

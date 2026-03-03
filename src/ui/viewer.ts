@@ -999,6 +999,7 @@
     if (hash.startsWith("#id=")) {
       const id = hash.slice("#id=".length);
       if (!id) return false;
+      showToast("Loading share...");
       const res = await fetchShareById(id);
       if (!res?.ok) return false;
       session = res.data;
@@ -1007,11 +1008,13 @@
       clearNetDetail();
       clearHilite();
       renderAll();
+      showToast("Share loaded.");
       return true;
     }
 
     if (!hash.startsWith("#data=")) return false;
     const payload = hash.slice("#data=".length);
+    showToast("Loading data...");
     const json = await decodeUrlPayload(payload);
     if (!json) {
       try { alert("Failed to decode URL data. Try the downloaded JSON file."); } catch {}

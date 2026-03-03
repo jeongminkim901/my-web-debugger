@@ -3,6 +3,9 @@
 This service stores shared sessions and serves them by id.
 
 ## Endpoints
+- `GET /health`
+  - Response: `{ "ok": true, "ts": 1700000000 }`
+
 - `POST /share`
   - Body: `{ "payload": {..}, "meta"?: {..}, "ttlSeconds"?: number }`
   - Response: `{ "id": "abc123", "expiresAt"?: "2026-03-01T00:00:00Z" }`
@@ -36,6 +39,7 @@ Configure one of (optional):
 - `JWT_ALG` (default: `HS256`)
 - `CLEANUP_INTERVAL_SECONDS` (default: `0`, disabled)
 - `RATE_LIMIT_PER_MIN` (default: `30`, set `0` to disable)
+- `MAX_PAYLOAD_BYTES` (default: `10000000`)
 
 ## Safety Defaults
 - Share IDs use 24 random bytes (URL-safe base64)

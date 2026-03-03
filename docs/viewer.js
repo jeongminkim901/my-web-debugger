@@ -956,6 +956,7 @@
             const id = hash.slice("#id=".length);
             if (!id)
                 return false;
+            showToast("Loading share...");
             const res = await fetchShareById(id);
             if (!res?.ok)
                 return false;
@@ -965,11 +966,13 @@
             clearNetDetail();
             clearHilite();
             renderAll();
+            showToast("Share loaded.");
             return true;
         }
         if (!hash.startsWith("#data="))
             return false;
         const payload = hash.slice("#data=".length);
+        showToast("Loading data...");
         const json = await decodeUrlPayload(payload);
         if (!json) {
             try {
