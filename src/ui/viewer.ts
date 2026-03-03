@@ -108,6 +108,11 @@
     if (serverStatusEl) serverStatusEl.textContent = text || "";
   }
 
+  function showShareFetchError(message: string) {
+    setServerStatus(message);
+    try { alert(message); } catch {}
+  }
+
   const initialServerSettings = loadServerSettings();
   applyServerSettingsToUi(initialServerSettings);
 
@@ -1016,14 +1021,11 @@
     const res = await fetch(`${baseUrl}/share/${encodeURIComponent(id)}`, { headers });
     if (!res.ok) {
       if (res.status === 401 || res.status === 403) {
-        setServerStatus("JWT required or invalid.");
-        try { alert("JWT required or invalid. Please enter a valid JWT."); } catch {}
+        showShareFetchError("Access denied. This share may be restricted.");
       } else if (res.status === 404) {
-        setServerStatus("Share not found or expired.");
-        try { alert("Share not found or expired."); } catch {}
+        showShareFetchError("Share not found or expired. Ask the sender to re-share.");
       } else {
-        setServerStatus(`Fetch failed (${res.status}).`);
-        try { alert(`Failed to fetch share: ${res.status}`); } catch {}
+        showShareFetchError(`Failed to fetch share (${res.status}).`);
       }
       return { ok: false, error: `http_${res.status}` };
     }

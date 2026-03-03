@@ -13,20 +13,30 @@ This service stores shared sessions and serves them by id.
 - `DELETE /share/{id}`
   - Response: `204 No Content`
 
-## Auth (JWT)
-The API expects `Authorization: Bearer <token>`.
+- `GET /logs`
+  - Query: `limit` (1..500, default 100), `share_id`?, `action`?
+  - Response: list of access log entries
 
-Configure one of:
+## Auth (JWT)
+If `JWT_SECRET` or `JWT_TOKEN` is set, the API expects
+`Authorization: Bearer <token>`. If neither is set, requests are allowed
+without auth.
+
+Configure one of (optional):
 - `JWT_SECRET` (recommended): verifies JWT (HS256 by default)
 - `JWT_TOKEN` (simple fallback): exact token match
-
-If neither is set, the API will reject requests with `500 Server auth not configured`.
 
 ## Environment
 - `DB_PATH` (default: `/data/app.db`)
 - `JWT_SECRET` (preferred) or `JWT_TOKEN`
 - `JWT_ALG` (default: `HS256`)
 - `CLEANUP_INTERVAL_SECONDS` (default: `0`, disabled)
+- `RATE_LIMIT_PER_MIN` (default: `60`, set `0` to disable)
+
+## Safety Defaults
+- Share IDs use 24 random bytes (URL-safe base64)
+- Access logs are stored in `access_logs`
+- Rate limiting is in-memory per IP
 
 ## Run (local)
 ```bash
