@@ -101,7 +101,7 @@
         clearHilite();
         renderAll();
       } catch {
-        alert("JSON 파싱 실패: 파일이 올바른지 확인해줘!");
+        alert("JSON 파싱 실패: 파일이 올바른지 확인해주세요");
       }
     };
     reader.readAsText(file);
