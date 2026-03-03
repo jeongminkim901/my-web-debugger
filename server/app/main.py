@@ -20,7 +20,7 @@ JWT_ALG = os.getenv("JWT_ALG", "HS256")
 CLEANUP_INTERVAL_SECONDS = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "0"))
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "30"))
 RATE_LIMIT_WINDOW_SECONDS = 60
-MAX_PAYLOAD_BYTES = int(os.getenv("MAX_PAYLOAD_BYTES", "5000000"))
+MAX_PAYLOAD_BYTES = int(os.getenv("MAX_PAYLOAD_BYTES", "10000000"))
 ACCESS_LOG_TTL_DAYS = int(os.getenv("ACCESS_LOG_TTL_DAYS", "30"))
 
 _rate_limit_lock = threading.Lock()
@@ -118,10 +118,6 @@ def _startup() -> None:
         t.start()
 
 
-@app.get("/health")
-def health() -> dict:
-    return {"ok": True, "ts": _now_ts()}
-
 
 def _require_auth(authorization: Optional[str] = Header(default=None)) -> None:
     if not JWT_SECRET and not JWT_TOKEN:
@@ -200,6 +196,14 @@ def _clamp_limit(value: int) -> int:
         return 1
     if value > 500:
         return 500
+    return value
+
+
+def _clamp_offset(value: int) -> int:
+    if value < 0:
+        return 0
+    if value > 100000:
+        return 100000
     return value
 
 
@@ -296,12 +300,14 @@ def delete_share(
 def list_logs(
     request: Request,
     limit: int = 100,
+    offset: int = 0,
     share_id: Optional[str] = None,
     action: Optional[str] = None,
     _: Any = Depends(_require_auth),
     __: Any = Depends(_rate_limit),
 ) -> list[dict]:
     limit = _clamp_limit(limit)
+    offset = _clamp_offset(offset)
     query = "SELECT share_id, action, ip, user_agent, created_at FROM access_logs"
     clauses = []
     params: list[Any] = []
@@ -313,8 +319,9 @@ def list_logs(
         params.append(action)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
-    query += " ORDER BY created_at DESC LIMIT ?"
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params.append(limit)
+    params.append(offset)
 
     with _connect() as conn:
         rows = conn.execute(query, params).fetchall()
@@ -335,12 +342,30 @@ def list_logs(
 def view_logs(
     request: Request,
     limit: int = 100,
+    offset: int = 0,
     share_id: Optional[str] = None,
     action: Optional[str] = None,
     _: Any = Depends(_require_auth),
     __: Any = Depends(_rate_limit),
 ) -> str:
-    items = list_logs(request, limit=limit, share_id=share_id, action=action)
+    items = list_logs(request, limit=limit, offset=offset, share_id=share_id, action=action)
+    next_offset = offset + limit
+    prev_offset = max(0, offset - limit)
+    qs = f"limit={limit}&offset={offset}"
+    if share_id:
+        qs += f"&share_id={share_id}"
+    if action:
+        qs += f"&action={action}"
+    next_qs = f"limit={limit}&offset={next_offset}"
+    if share_id:
+        next_qs += f"&share_id={share_id}"
+    if action:
+        next_qs += f"&action={action}"
+    prev_qs = f"limit={limit}&offset={prev_offset}"
+    if share_id:
+        prev_qs += f"&share_id={share_id}"
+    if action:
+        prev_qs += f"&action={action}"
     rows = "\n".join(
         f"<tr><td>{i['created_at']}</td><td>{i['action']}</td>"
         f"<td>{i.get('share_id') or ''}</td><td>{i.get('ip') or ''}</td>"
@@ -362,7 +387,19 @@ def view_logs(
       </head>
       <body>
         <h2>Access Logs</h2>
-        <div class="muted">limit={limit} share_id={share_id or "-"} action={action or "-"}</div>
+        <div class="muted">limit={limit} offset={offset} share_id={share_id or "-"} action={action or "-"}</div>
+        <form style="margin:12px 0;" method="get" action="/logs/view">
+          <label>limit <input name="limit" value="{limit}" size="6" /></label>
+          <label>offset <input name="offset" value="{offset}" size="8" /></label>
+          <label>share_id <input name="share_id" value="{share_id or ''}" size="16" /></label>
+          <label>action <input name="action" value="{action or ''}" size="10" /></label>
+          <button type="submit">Apply</button>
+        </form>
+        <div style="margin-bottom:12px;">
+          <a href="/logs/view?{prev_qs}">Prev</a>
+          <span class="muted" style="margin:0 6px;">|</span>
+          <a href="/logs/view?{next_qs}">Next</a>
+        </div>
         <table>
           <thead>
             <tr>
@@ -380,3 +417,24 @@ def view_logs(
       </body>
     </html>
     """
+
+
+@app.get("/health")
+def health() -> dict:
+    status_db = "ok"
+    share_count = None
+    log_count = None
+    try:
+        with _connect() as conn:
+            conn.execute("SELECT 1")
+            share_count = conn.execute("SELECT COUNT(1) FROM shares").fetchone()[0]
+            log_count = conn.execute("SELECT COUNT(1) FROM access_logs").fetchone()[0]
+    except Exception:
+        status_db = "error"
+    return {
+        "ok": True,
+        "ts": _now_ts(),
+        "db": status_db,
+        "shares": share_count,
+        "logs": log_count,
+    }

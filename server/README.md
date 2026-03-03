@@ -17,7 +17,7 @@ This service stores shared sessions and serves them by id.
   - Response: `204 No Content`
 
 - `GET /logs`
-  - Query: `limit` (1..500, default 100), `share_id`?, `action`?
+  - Query: `limit` (1..500, default 100), `offset` (default 0), `share_id`?, `action`?
   - Response: list of access log entries
 
 - `GET /logs/view`
@@ -39,7 +39,7 @@ Configure one of (optional):
 - `JWT_ALG` (default: `HS256`)
 - `CLEANUP_INTERVAL_SECONDS` (default: `0`, disabled)
 - `RATE_LIMIT_PER_MIN` (default: `30`, set `0` to disable)
-- `MAX_PAYLOAD_BYTES` (default: `5000000`)
+- `MAX_PAYLOAD_BYTES` (default: `10000000`)
 - `ACCESS_LOG_TTL_DAYS` (default: `30`, set `0` to disable)
 
 ## Safety Defaults
