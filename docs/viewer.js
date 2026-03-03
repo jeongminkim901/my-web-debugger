@@ -5,10 +5,7 @@
     const drop = el("drop");
     const fileInput = el("file");
     const content = el("content");
-    const serverBaseUrlEl = el("serverBaseUrl");
-    const serverJwtEl = el("serverJwt");
-    const serverStatusEl = el("serverStatus");
-    const saveServerBtn = el("saveServer");
+    const SERVER_BASE_URL = "http://192.168.20.112";
     const toastEl = el("toast");
     // Controls
     const netSearch = el("netSearch");
@@ -54,48 +51,6 @@
     let hiliteMode = "none"; // "none" | "fromConsole" | "fromNetwork"
     let hiliteCenterTs = null;
     let selectedConsoleKey = null;
-    // Server share settings (viewer-side)
-    const SERVER_SETTINGS_KEY = "my-web-debugger:serverSettings";
-    function loadServerSettings() {
-        try {
-            const raw = localStorage.getItem(SERVER_SETTINGS_KEY);
-            if (!raw)
-                return { serverBaseUrl: "", jwt: "" };
-            const parsed = JSON.parse(raw);
-            return {
-                serverBaseUrl: typeof parsed?.serverBaseUrl === "string" ? parsed.serverBaseUrl : "",
-                jwt: typeof parsed?.jwt === "string" ? parsed.jwt : ""
-            };
-        }
-        catch {
-            return { serverBaseUrl: "", jwt: "" };
-        }
-    }
-    function saveServerSettings(settings) {
-        try {
-            localStorage.setItem(SERVER_SETTINGS_KEY, JSON.stringify(settings));
-            return true;
-        }
-        catch {
-            return false;
-        }
-    }
-    function applyServerSettingsToUi(settings) {
-        if (serverBaseUrlEl)
-            serverBaseUrlEl.value = settings.serverBaseUrl || "";
-        if (serverJwtEl)
-            serverJwtEl.value = settings.jwt || "";
-    }
-    function getServerSettingsFromUi() {
-        return {
-            serverBaseUrl: (serverBaseUrlEl?.value || "").trim(),
-            jwt: (serverJwtEl?.value || "").trim()
-        };
-    }
-    function setServerStatus(text) {
-        if (serverStatusEl)
-            serverStatusEl.textContent = text || "";
-    }
     function showToast(message) {
         if (!toastEl)
             return;
@@ -104,19 +59,7 @@
         setTimeout(() => toastEl.classList.add("hidden"), 2500);
     }
     function showShareFetchError(message) {
-        setServerStatus(message);
         showToast(message);
-    }
-    const initialServerSettings = loadServerSettings();
-    applyServerSettingsToUi(initialServerSettings);
-    if (saveServerBtn) {
-        saveServerBtn.addEventListener("click", () => {
-            const settings = getServerSettingsFromUi();
-            const ok = saveServerSettings(settings);
-            setServerStatus(ok ? "Saved" : "Save failed");
-            if (ok)
-                setTimeout(() => setServerStatus(""), 2000);
-        });
     }
     // ---------- DnD ----------
     drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag"); });
@@ -966,20 +909,11 @@
         return raw.endsWith("/") ? raw.slice(0, -1) : raw;
     }
     async function fetchShareById(id) {
-        const settings = loadServerSettings();
-        const baseUrl = normalizeBaseUrl(settings.serverBaseUrl);
+        const baseUrl = normalizeBaseUrl(SERVER_BASE_URL);
         if (!baseUrl) {
-            setServerStatus("Server Base URL is not set.");
-            try {
-                alert("Server Base URL is not set. Open settings and save it.");
-            }
-            catch { }
             return { ok: false, error: "missing_base_url" };
         }
-        const headers = {};
-        if (settings.jwt)
-            headers["Authorization"] = `Bearer ${settings.jwt}`;
-        const res = await fetch(`${baseUrl}/share/${encodeURIComponent(id)}`, { headers });
+        const res = await fetch(`${baseUrl}/share/${encodeURIComponent(id)}`);
         if (!res.ok) {
             if (res.status === 401 || res.status === 403) {
                 showShareFetchError("Access denied. This share may be restricted.");

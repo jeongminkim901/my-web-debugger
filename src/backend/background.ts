@@ -9,7 +9,8 @@ let sessionEndedAt = null;
 const PUBLIC_VIEWER_URL = "https://jeongminkim901.github.io/my-web-debugger/";
 const PUBLIC_VIEWER_MAX_INLINE_BYTES = 700_000; // keep URL reasonably short
 const SCREENSHOT_MAX_INLINE_BYTES = 200_000;
-const SERVER_CONFIG_KEY = "serverConfig";
+const SERVER_BASE_URL = "http://192.168.20.112";
+const SERVER_VIEWER_BASE_URL = "http://192.168.20.112";
 const SERVER_TTL_DAYS = 30;
 const SERVER_TTL_SECONDS = SERVER_TTL_DAYS * 24 * 60 * 60;
 
@@ -594,24 +595,6 @@ async function loadExportFromSession(tabId) {
   }
 }
 
-async function loadServerConfig() {
-  try {
-    const res = await chrome.storage.local.get(SERVER_CONFIG_KEY);
-    return res?.[SERVER_CONFIG_KEY] || null;
-  } catch {
-    return null;
-  }
-}
-
-async function saveServerConfig(config) {
-  try {
-    await chrome.storage.local.set({ [SERVER_CONFIG_KEY]: config });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function normalizeBaseUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -623,17 +606,14 @@ function buildShareViewerUrl(viewerBaseUrl, id) {
   return `${base}/#id=${encodeURIComponent(id)}`;
 }
 
-async function shareToServer(exportData, serverConfig) {
-  const baseUrl = normalizeBaseUrl(serverConfig?.serverBaseUrl);
-  const jwt = String(serverConfig?.jwt || "").trim();
+async function shareToServer(exportData) {
+  const baseUrl = normalizeBaseUrl(SERVER_BASE_URL);
   if (!baseUrl) return { ok: false, error: "missing_server_url" };
-  if (!jwt) return { ok: false, error: "missing_jwt" };
 
   const res = await fetch(`${baseUrl}/share`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${jwt}`
+      "Content-Type": "application/json"
     },
     body: JSON.stringify({
       payload: exportData,
@@ -667,22 +647,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     const state = ensureDebuggerState(tabId);
     sendResponse({ ok: true, enabled: !!state.enabled, attached: !!state.attached });
-    return true;
-  }
-
-  if (msg.type === "GET_SERVER_CONFIG") {
-    (async () => {
-      const config = await loadServerConfig();
-      sendResponse({ ok: true, config: config || null });
-    })();
-    return true;
-  }
-
-  if (msg.type === "SET_SERVER_CONFIG") {
-    (async () => {
-      const ok = await saveServerConfig(msg.config || null);
-      sendResponse({ ok: !!ok });
-    })();
     return true;
   }
 
@@ -844,23 +808,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const screenshot = await captureScreenshot(tab);
         const exportData = buildExportData({ tabId, tab, data, meta, screenshot });
 
-        const serverConfig = await loadServerConfig();
-        if (serverConfig?.serverBaseUrl) {
-          try {
-            const shareRes = await shareToServer(exportData, serverConfig);
-            if (!shareRes.ok) {
-              sendResponse({ ok: false, error: shareRes.error || "share_failed" });
-              return;
-            }
-            const viewerUrl = buildShareViewerUrl(serverConfig?.viewerBaseUrl, shareRes.id);
-            chrome.tabs.create({ url: viewerUrl }, () => {
-              sendResponse({ ok: true, public: false, inline: false, id: shareRes.id, url: viewerUrl });
-            });
-            return;
-          } catch (err) {
-            sendResponse({ ok: false, error: "share_failed" });
+        try {
+          const shareRes = await shareToServer(exportData);
+          if (!shareRes.ok) {
+            sendResponse({ ok: false, error: shareRes.error || "share_failed" });
             return;
           }
+          const viewerUrl = buildShareViewerUrl(SERVER_VIEWER_BASE_URL, shareRes.id);
+          chrome.tabs.create({ url: viewerUrl }, () => {
+            sendResponse({ ok: true, public: false, inline: false, id: shareRes.id, url: viewerUrl });
+          });
+          return;
+        } catch (err) {
+          sendResponse({ ok: false, error: "share_failed" });
+          return;
         }
 
         const json = JSON.stringify(exportData, null, 2);

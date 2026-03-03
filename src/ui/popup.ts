@@ -15,9 +15,6 @@ const modalNoteEl = document.getElementById("modalNote") as HTMLTextAreaElement;
 const modalTagsEl = document.getElementById("modalTags") as HTMLInputElement;
 const metaCancelBtn = document.getElementById("metaCancel") as HTMLButtonElement;
 const metaSaveBtn = document.getElementById("metaSave") as HTMLButtonElement;
-const serverBaseUrlEl = document.getElementById("serverBaseUrl") as HTMLInputElement;
-const viewerBaseUrlEl = document.getElementById("viewerBaseUrl") as HTMLInputElement;
-const serverJwtEl = document.getElementById("serverJwt") as HTMLInputElement;
 
 let statusTimer = null as ReturnType<typeof setTimeout> | null;
 let toastTimer = null as ReturnType<typeof setTimeout> | null;
@@ -156,29 +153,6 @@ async function sendMeta(tabId: number) {
   });
 }
 
-function getServerConfigFromInputs() {
-  return {
-    serverBaseUrl: (serverBaseUrlEl?.value || "").trim() || null,
-    viewerBaseUrl: (viewerBaseUrlEl?.value || "").trim() || null,
-    jwt: (serverJwtEl?.value || "").trim() || null
-  };
-}
-
-async function loadServerConfig() {
-  return new Promise<any>((resolve) => {
-    chrome.runtime.sendMessage({ type: "GET_SERVER_CONFIG" }, (res) => resolve(res?.config || null));
-  });
-}
-
-async function saveServerConfig() {
-  return new Promise<boolean>((resolve) => {
-    chrome.runtime.sendMessage(
-      { type: "SET_SERVER_CONFIG", config: getServerConfigFromInputs() },
-      (res) => resolve(!!res?.ok)
-    );
-  });
-}
-
 // popup status sync
 chrome.runtime.sendMessage({ type: "GET_STATUS" }, (res) => {
   if (res?.ok) setBadge(!!res.recording);
@@ -201,19 +175,6 @@ async function syncDeepCaptureToggle() {
 }
 
 syncDeepCaptureToggle();
-
-// load server config
-loadServerConfig().then((config) => {
-  if (!config) return;
-  if (serverBaseUrlEl) serverBaseUrlEl.value = config.serverBaseUrl || "";
-  if (viewerBaseUrlEl) viewerBaseUrlEl.value = config.viewerBaseUrl || "";
-  if (serverJwtEl) serverJwtEl.value = config.jwt || "";
-});
-
-document.getElementById("saveServer")?.addEventListener("click", async () => {
-  const ok = await saveServerConfig();
-  setStatus(ok ? "Server settings saved." : "Failed to save server settings.");
-});
 
 if (deepCaptureEl) {
   deepCaptureEl.addEventListener("change", async () => {
@@ -285,9 +246,7 @@ document.getElementById("openViewer")!.onclick = async () => {
       else setStatus("Public Viewer opened. Upload the downloaded JSON.");
     } else {
       const err = res?.error || "unknown";
-      if (err === "missing_server_url") setStatus("Server URL missing.");
-      else if (err === "missing_jwt") setStatus("JWT missing.");
-      else setStatus(`Open Viewer failed: ${err}`);
+      setStatus(`Open Viewer failed: ${err}`);
     }
   });
 };
