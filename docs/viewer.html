@@ -108,10 +108,24 @@
     .error-item { display:flex; gap:8px; padding:6px 0; border-bottom:1px solid #1f2a3a; font-size: 12px; }
     .error-item:last-child { border-bottom:none; }
     .error-url { flex: 1 1 auto; }
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      background: rgba(15, 22, 34, 0.98);
+      border: 1px solid #2a3a52;
+      color: #e6edf3;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+      z-index: 9999;
+    }
   </style>
 </head>
 
 <body>
+  <div id="toast" class="toast hidden"></div>
   <h1>Debug Session Viewer</h1>
   <div class="row muted" id="meta"></div>
   <div class="row">

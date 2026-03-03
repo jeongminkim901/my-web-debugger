@@ -17,7 +17,7 @@ JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_TOKEN = os.getenv("JWT_TOKEN", "")
 JWT_ALG = os.getenv("JWT_ALG", "HS256")
 CLEANUP_INTERVAL_SECONDS = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "0"))
-RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "60"))
+RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "30"))
 RATE_LIMIT_WINDOW_SECONDS = 60
 
 _rate_limit_lock = threading.Lock()
@@ -294,3 +294,54 @@ def list_logs(
         }
         for r in rows
     ]
+
+
+@app.get("/logs/view")
+def view_logs(
+    request: Request,
+    limit: int = 100,
+    share_id: Optional[str] = None,
+    action: Optional[str] = None,
+    _: Any = Depends(_require_auth),
+    __: Any = Depends(_rate_limit),
+) -> str:
+    items = list_logs(request, limit=limit, share_id=share_id, action=action)
+    rows = "\n".join(
+        f"<tr><td>{i['created_at']}</td><td>{i['action']}</td>"
+        f"<td>{i.get('share_id') or ''}</td><td>{i.get('ip') or ''}</td>"
+        f"<td>{i.get('user_agent') or ''}</td></tr>"
+        for i in items
+    )
+    return f"""
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Access Logs</title>
+        <style>
+          body {{ font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 24px; }}
+          table {{ width: 100%; border-collapse: collapse; }}
+          th, td {{ border-bottom: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }}
+          th {{ background: #f6f6f6; position: sticky; top: 0; }}
+          .muted {{ color: #666; font-size: 12px; }}
+        </style>
+      </head>
+      <body>
+        <h2>Access Logs</h2>
+        <div class="muted">limit={limit} share_id={share_id or "-"} action={action or "-"}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>timestamp</th>
+              <th>action</th>
+              <th>share_id</th>
+              <th>ip</th>
+              <th>user_agent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows or "<tr><td colspan='5' class='muted'>No logs</td></tr>"}
+          </tbody>
+        </table>
+      </body>
+    </html>
+    """

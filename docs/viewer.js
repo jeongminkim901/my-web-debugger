@@ -9,6 +9,7 @@
     const serverJwtEl = el("serverJwt");
     const serverStatusEl = el("serverStatus");
     const saveServerBtn = el("saveServer");
+    const toastEl = el("toast");
     // Controls
     const netSearch = el("netSearch");
     const hostFilter = el("hostFilter");
@@ -95,12 +96,16 @@
         if (serverStatusEl)
             serverStatusEl.textContent = text || "";
     }
+    function showToast(message) {
+        if (!toastEl)
+            return;
+        toastEl.textContent = message;
+        toastEl.classList.remove("hidden");
+        setTimeout(() => toastEl.classList.add("hidden"), 2500);
+    }
     function showShareFetchError(message) {
         setServerStatus(message);
-        try {
-            alert(message);
-        }
-        catch { }
+        showToast(message);
     }
     const initialServerSettings = loadServerSettings();
     applyServerSettingsToUi(initialServerSettings);

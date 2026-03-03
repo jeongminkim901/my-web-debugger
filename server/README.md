@@ -17,6 +17,10 @@ This service stores shared sessions and serves them by id.
   - Query: `limit` (1..500, default 100), `share_id`?, `action`?
   - Response: list of access log entries
 
+- `GET /logs/view`
+  - Query: same as `/logs`
+  - Response: HTML table for quick viewing
+
 ## Auth (JWT)
 If `JWT_SECRET` or `JWT_TOKEN` is set, the API expects
 `Authorization: Bearer <token>`. If neither is set, requests are allowed
@@ -31,7 +35,7 @@ Configure one of (optional):
 - `JWT_SECRET` (preferred) or `JWT_TOKEN`
 - `JWT_ALG` (default: `HS256`)
 - `CLEANUP_INTERVAL_SECONDS` (default: `0`, disabled)
-- `RATE_LIMIT_PER_MIN` (default: `60`, set `0` to disable)
+- `RATE_LIMIT_PER_MIN` (default: `30`, set `0` to disable)
 
 ## Safety Defaults
 - Share IDs use 24 random bytes (URL-safe base64)
