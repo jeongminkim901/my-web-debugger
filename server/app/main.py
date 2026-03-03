@@ -20,7 +20,8 @@ JWT_ALG = os.getenv("JWT_ALG", "HS256")
 CLEANUP_INTERVAL_SECONDS = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "0"))
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "30"))
 RATE_LIMIT_WINDOW_SECONDS = 60
-MAX_PAYLOAD_BYTES = int(os.getenv("MAX_PAYLOAD_BYTES", "10000000"))
+MAX_PAYLOAD_BYTES = int(os.getenv("MAX_PAYLOAD_BYTES", "5000000"))
+ACCESS_LOG_TTL_DAYS = int(os.getenv("ACCESS_LOG_TTL_DAYS", "30"))
 
 _rate_limit_lock = threading.Lock()
 _rate_limit_state: dict[str, list[int]] = {}
@@ -86,6 +87,16 @@ def _cleanup_expired() -> None:
             (now,),
         )
         conn.commit()
+    _cleanup_logs()
+
+
+def _cleanup_logs() -> None:
+    if ACCESS_LOG_TTL_DAYS <= 0:
+        return
+    cutoff = _now_ts() - (ACCESS_LOG_TTL_DAYS * 24 * 60 * 60)
+    with _connect() as conn:
+        conn.execute("DELETE FROM access_logs WHERE created_at <= ?", (cutoff,))
+        conn.commit()
 
 def _cleanup_loop() -> None:
     if CLEANUP_INTERVAL_SECONDS <= 0:
@@ -101,6 +112,7 @@ def _cleanup_loop() -> None:
 def _startup() -> None:
     _init_db()
     _cleanup_expired()
+    _cleanup_logs()
     if CLEANUP_INTERVAL_SECONDS > 0:
         t = threading.Thread(target=_cleanup_loop, daemon=True)
         t.start()

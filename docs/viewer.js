@@ -956,7 +956,7 @@
             const id = hash.slice("#id=".length);
             if (!id)
                 return false;
-            showToast("Loading share...");
+            showToast("Loading share from server...");
             const res = await fetchShareById(id);
             if (!res?.ok)
                 return false;
@@ -972,7 +972,7 @@
         if (!hash.startsWith("#data="))
             return false;
         const payload = hash.slice("#data=".length);
-        showToast("Loading data...");
+        showToast("Loading URL data...");
         const json = await decodeUrlPayload(payload);
         if (!json) {
             try {

@@ -39,7 +39,8 @@ Configure one of (optional):
 - `JWT_ALG` (default: `HS256`)
 - `CLEANUP_INTERVAL_SECONDS` (default: `0`, disabled)
 - `RATE_LIMIT_PER_MIN` (default: `30`, set `0` to disable)
-- `MAX_PAYLOAD_BYTES` (default: `10000000`)
+- `MAX_PAYLOAD_BYTES` (default: `5000000`)
+- `ACCESS_LOG_TTL_DAYS` (default: `30`, set `0` to disable)
 
 ## Safety Defaults
 - Share IDs use 24 random bytes (URL-safe base64)
