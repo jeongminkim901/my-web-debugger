@@ -16,6 +16,9 @@
     .drop.drag { opacity: .7; }
     .kpi { min-width: 160px; }
     .kpi .v { font-size: 22px; font-weight: 700; margin-top: 6px; }
+    .kpi-filter { cursor: pointer; user-select: none; }
+    .kpi-filter:hover { border-color: rgba(125, 211, 252, 0.55); box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.12) inset; }
+    .kpi-active { border-color: rgba(125, 211, 252, 0.75); box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.2) inset; }
     input, select { background:#0f1622; border:1px solid #2a3a52; color:#e6edf3; border-radius: 10px; padding:10px; outline:none; }
     input { width: 340px; max-width: 100%; }
     .btn { cursor:pointer; user-select:none; }
@@ -182,6 +185,7 @@
   const fileInput = el("file");
   const content = el("content");
   const SERVER_BASE_URL = "http://192.168.20.112";
+  const kpisWrap = el("kpis");
 
   // Controls
   const netSearch = el("netSearch");
@@ -319,6 +323,24 @@
     });
   }
 
+  if (kpisWrap) {
+    kpisWrap.addEventListener("click", (e) => {
+      const target = e.target;
+      const card = target && target.closest ? target.closest("[data-kpi]") : null;
+      if (!card || !statusFilter) return;
+      const key = card.getAttribute("data-kpi");
+      if (!key) return;
+
+      if (key === "total") {
+        statusFilter.value = "all";
+      } else {
+        statusFilter.value = key;
+      }
+      renderNetworkTable();
+      syncKpiActive();
+    });
+  }
+
   function formatDuration(ms) {
     if (typeof ms !== "number") return "-";
     if (ms < 1000) return `${ms}ms`;
@@ -349,12 +371,13 @@
     const by = s.byStatusGroup || {};
 
     el("kpis").innerHTML = `
-      ${kpi("Total Requests", total)}
-      ${kpi("2xx", by["2xx"] || 0)}
-      ${kpi("3xx", by["3xx"] || 0)}
-      ${kpi("4xx", by["4xx"] || 0)}
-      ${kpi("5xx", by["5xx"] || 0)}
+      ${kpi("Total Requests", total, "total")}
+      ${kpi("2xx", by["2xx"] || 0, "2xx")}
+      ${kpi("3xx", by["3xx"] || 0, "3xx")}
+      ${kpi("4xx", by["4xx"] || 0, "4xx")}
+      ${kpi("5xx", by["5xx"] || 0, "5xx")}
     `;
+    syncKpiActive();
 
     // Slowest
     const slow = (s.slowestTop5 || []).map(x => `
@@ -602,15 +625,32 @@
         </tbody>
       </table>
     `;
+    syncKpiActive();
   }
 
-  function kpi(label, value) {
+  function kpi(label, value, key) {
+    const activeKey = getActiveKpiKey();
+    const isActive = key && activeKey === key;
     return `
-      <div class="card kpi">
+      <div class="card kpi kpi-filter${isActive ? " kpi-active" : ""}" data-kpi="${escapeHtml(String(key || ""))}" title="Click to filter network">
         <div class="muted">${escapeHtml(label)}</div>
         <div class="v">${escapeHtml(String(value))}</div>
       </div>
     `;
+  }
+
+  function getActiveKpiKey() {
+    const v = statusFilter.value || "all";
+    return v === "all" ? "total" : v;
+  }
+
+  function syncKpiActive() {
+    if (!kpisWrap) return;
+    const activeKey = getActiveKpiKey();
+    kpisWrap.querySelectorAll("[data-kpi]").forEach((el) => {
+      const key = el.getAttribute("data-kpi");
+      el.classList.toggle("kpi-active", key === activeKey);
+    });
   }
 
   function prettyArgs(args) {
