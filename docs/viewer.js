@@ -953,21 +953,8 @@
             return false;
         const hash = loc.hash || "";
         if (hash.startsWith("#id=")) {
-            const id = hash.slice("#id=".length);
-            if (!id)
-                return false;
-            showToast("Loading share from server...");
-            const res = await fetchShareById(id);
-            if (!res?.ok)
-                return false;
-            session = res.data;
-            resetToggles();
-            resetFilters();
-            clearNetDetail();
-            clearHilite();
-            renderAll();
-            showToast("Share loaded.");
-            return true;
+            showToast("Server sharing is disabled.");
+            return false;
         }
         if (!hash.startsWith("#data="))
             return false;

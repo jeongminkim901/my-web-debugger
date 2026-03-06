@@ -825,18 +825,8 @@
   async function loadFromHashIfPossible() {
     const hash = location.hash || "";
     if (hash.startsWith("#id=")) {
-      const id = hash.slice("#id=".length);
-      if (!id) return false;
-      const res = await fetchShareById(id);
-      if (!res?.ok) return false;
-      session = res.data;
-      slowOnly = false;
-      bodyOnly = false;
-      clearNetDetail();
-      if (toggleSlowBtn) toggleSlowBtn.textContent = "Slow only: OFF";
-      if (toggleBodyBtn) toggleBodyBtn.textContent = "Body only: OFF";
-      renderAll();
-      return true;
+      alert("Server sharing is disabled.");
+      return false;
     }
 
     if (!hash.startsWith("#data=")) return false;

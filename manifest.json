@@ -3,10 +3,11 @@
   "name": "My Web Debugger (MVP)",
   "version": "0.1.0",
   "description": "Collect console logs and network metadata, export as JSON.",
-  "permissions": ["storage", "tabs", "webRequest", "downloads", "debugger"],
+  "permissions": ["storage", "tabs", "webRequest", "downloads", "debugger", "tabCapture", "offscreen"],
   "host_permissions": ["<all_urls>"],
   "background": {
-    "service_worker": "dist/backend/background.js"
+    "service_worker": "dist/backend/background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "dist/ui/popup.html"

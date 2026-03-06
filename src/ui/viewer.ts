@@ -2,13 +2,16 @@
 
 (() => {
   let session = null;
+  let recordingBlob: Blob | null = null;
+  let recordingMime: string | null = null;
+  let recordingCreatedAt: number | null = null;
+  let recordingObjectUrl: string | null = null;
 
   const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
   const drop = el<HTMLElement>("drop");
   const fileInput = el<HTMLInputElement>("file");
   const content = el<HTMLElement>("content");
-  const SERVER_BASE_URL = "http://192.168.20.112";
   const toastEl = el<HTMLElement>("toast");
 
   // Controls
@@ -34,6 +37,7 @@
   const timelineAxis = el<HTMLElement>("timelineAxis");
   const timelineLegend = el<HTMLElement>("timelineLegend");
   const screenshotWrap = el<HTMLElement>("screenshotWrap");
+  const recordingWrap = el<HTMLElement>("recordingWrap");
   const kpisWrap = el<HTMLElement>("kpis");
 
   // Toggles
@@ -70,10 +74,6 @@
     toastEl.textContent = message;
     toastEl.classList.remove("hidden");
     setTimeout(() => toastEl.classList.add("hidden"), 2500);
-  }
-
-  function showShareFetchError(message: string) {
-    showToast(message);
   }
 
   // ---------- DnD ----------
@@ -350,6 +350,7 @@
     renderErrorSummary();
     renderTimeline();
     renderScreenshot();
+    renderRecording();
   }
 
   function renderTables() {
@@ -489,12 +490,42 @@
 
   function renderScreenshot() {
     if (!session || !screenshotWrap) return;
-    const s = session.screenshot;
+    const list = Array.isArray(session.errorScreenshots) ? session.errorScreenshots : [];
+    if (list.length) {
+      const items = list.map((x, i) => {
+        const ts = x?.at ? new Date(x.at).toISOString() : "-";
+        const code = x?.statusCode ?? "-";
+        const url = x?.url || "";
+        const src = x?.dataUrl || "";
+        return `
+          <div class="card" style="padding:8px; background:#0b0f14; border:1px solid #1f2a3a;">
+            <div class="muted small" style="margin-bottom:6px;">
+              #${i + 1} · ${escapeHtml(String(code))} · ${escapeHtml(ts)}
+            </div>
+            <div class="muted small" style="margin-bottom:6px; word-break: break-all;">
+              ${escapeHtml(url)}
+            </div>
+            <img src="${escapeHtml(src)}" style="max-width:100%; border:1px solid #1f2a3a; border-radius:10px;" />
+          </div>
+        `;
+      }).join("");
+      screenshotWrap.innerHTML = `<div class="grid2">${items}</div>`;
+      return;
+    }
+
+    const s = session.errorScreenshot || session.screenshot;
     if (!s) {
       screenshotWrap.textContent = "No screenshot";
       return;
     }
-    screenshotWrap.innerHTML = `<img src="${escapeHtml(s)}" style="max-width:100%; border:1px solid #1f2a3a; border-radius:10px;" />`;
+    const label = session.errorScreenshot ? "Error screenshot" : "Screenshot";
+    const at = session.errorScreenshotAt
+      ? ` (${new Date(session.errorScreenshotAt).toISOString()})`
+      : "";
+    screenshotWrap.innerHTML = `
+      <div class="muted small" style="margin-bottom:6px;">${escapeHtml(label + at)}</div>
+      <img src="${escapeHtml(s)}" style="max-width:100%; border:1px solid #1f2a3a; border-radius:10px;" />
+    `;
   }
 
   // ---------- Helpers (origin & time window) ----------
@@ -948,6 +979,87 @@
     }[c]));
   }
 
+  // ---------- Recording (IndexedDB) ----------
+  const RECORDING_DB_NAME = "my-web-debugger";
+  const RECORDING_STORE = "recordings";
+
+  function openRecordingDb(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(RECORDING_DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(RECORDING_STORE)) {
+          db.createObjectStore(RECORDING_STORE, { keyPath: "tabId" });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function txComplete(tx: IDBTransaction): Promise<void> {
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async function loadRecordingForTab(tabId: number) {
+    if (!tabId || !Number.isFinite(tabId)) return;
+    try {
+      const db = await openRecordingDb();
+      const tx = db.transaction(RECORDING_STORE, "readonly");
+      const req = tx.objectStore(RECORDING_STORE).get(tabId);
+      const data = await new Promise<any>((resolve, reject) => {
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+      await txComplete(tx);
+      db.close();
+
+      if (data?.blob) {
+        recordingBlob = data.blob as Blob;
+        recordingMime = data.mime || recordingBlob.type || "video/webm";
+        recordingCreatedAt = data.createdAt || null;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function renderRecording() {
+    if (!recordingWrap) return;
+    if (!recordingBlob) {
+      recordingWrap.textContent = "No recording";
+      return;
+    }
+
+    if (recordingObjectUrl) {
+      URL.revokeObjectURL(recordingObjectUrl);
+      recordingObjectUrl = null;
+    }
+    recordingObjectUrl = URL.createObjectURL(recordingBlob);
+
+    recordingWrap.innerHTML = "";
+    const video = document.createElement("video");
+    video.controls = true;
+    video.src = recordingObjectUrl;
+    video.style.maxWidth = "100%";
+    video.style.maxHeight = "420px";
+    video.style.border = "1px solid #1f2a3a";
+    video.style.borderRadius = "10px";
+    recordingWrap.appendChild(video);
+
+    if (recordingCreatedAt) {
+      const meta = document.createElement("div");
+      meta.className = "muted small";
+      meta.textContent = `Recorded at ${new Date(recordingCreatedAt).toISOString()}`;
+      meta.style.marginTop = "6px";
+      recordingWrap.appendChild(meta);
+    }
+  }
+
   // ---------- Auto load from extension ----------
   function base64UrlToBytes(b64url) {
     const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
@@ -990,34 +1102,6 @@
     }
   }
 
-  function normalizeBaseUrl(value: string) {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    return raw.endsWith("/") ? raw.slice(0, -1) : raw;
-  }
-
-  async function fetchShareById(id: string) {
-    const baseUrl = normalizeBaseUrl(SERVER_BASE_URL);
-    if (!baseUrl) {
-      return { ok: false, error: "missing_base_url" };
-    }
-    const res = await fetch(`${baseUrl}/share/${encodeURIComponent(id)}`);
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
-        showShareFetchError("Access denied. This share may be restricted.");
-      } else if (res.status === 404) {
-        showShareFetchError("Share not found or expired. Ask the sender to re-share.");
-      } else {
-        showShareFetchError(`Failed to fetch share (${res.status}).`);
-      }
-      return { ok: false, error: `http_${res.status}` };
-    }
-    const data = await res.json().catch(() => null);
-    if (!data) return { ok: false, error: "invalid_json" };
-    if (data.payload) return { ok: true, data: data.payload };
-    return { ok: true, data };
-  }
-
   function parseOptionalNumber(raw) {
     const t = String(raw || "").trim();
     if (!t) return NaN;
@@ -1036,19 +1120,8 @@
     if (!loc) return false;
     const hash = loc.hash || "";
     if (hash.startsWith("#id=")) {
-      const id = hash.slice("#id=".length);
-      if (!id) return false;
-      showToast("Loading share from server...");
-      const res = await fetchShareById(id);
-      if (!res?.ok) return false;
-      session = res.data;
-      resetToggles();
-      resetFilters();
-      clearNetDetail();
-      clearHilite();
-      renderAll();
-      showToast("Share loaded.");
-      return true;
+      showToast("Server sharing is disabled.");
+      return false;
     }
 
     if (!hash.startsWith("#data=")) return false;
@@ -1091,12 +1164,15 @@
         if (err) { resolve(false); return; }
         if (res?.ok && res.data) {
           session = res.data;
-          resetToggles();
-          resetFilters();
-          clearNetDetail();
-          clearHilite();
-          renderAll();
-          resolve(true);
+          loadRecordingForTab(tabId).then(() => {
+            resetToggles();
+            resetFilters();
+            clearNetDetail();
+            clearHilite();
+            renderAll();
+            resolve(true);
+          });
+          return;
         } else {
           resolve(false);
         }
@@ -1115,4 +1191,8 @@
     const loaded = await autoLoadFromExtensionIfPossible();
     if (!loaded) await loadFromHashIfPossible();
   })();
+
+  window.addEventListener("beforeunload", () => {
+    if (recordingObjectUrl) URL.revokeObjectURL(recordingObjectUrl);
+  });
 })();

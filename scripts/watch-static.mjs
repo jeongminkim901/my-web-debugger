@@ -4,9 +4,13 @@ import path from "node:path";
 const root = process.cwd();
 const srcDir = path.join(root, "src", "ui");
 const distDir = path.join(root, "dist", "ui");
+const offscreenSrcDir = path.join(root, "src", "offscreen");
+const offscreenDistDir = path.join(root, "dist", "offscreen");
 const files = ["popup.html", "viewer.html", "index.html"];
+const offscreenFiles = ["recorder.html"];
 
 fs.mkdirSync(distDir, { recursive: true });
+fs.mkdirSync(offscreenDistDir, { recursive: true });
 
 function copyOne(file) {
   const src = path.join(srcDir, file);
@@ -18,11 +22,29 @@ function copyOne(file) {
 }
 
 for (const file of files) copyOne(file);
+for (const file of offscreenFiles) {
+  const src = path.join(offscreenSrcDir, file);
+  const dest = path.join(offscreenDistDir, file);
+  if (!fs.existsSync(src)) continue;
+  fs.copyFileSync(src, dest);
+  console.log(`[copy-static] ${file}`);
+}
 
 for (const file of files) {
   const src = path.join(srcDir, file);
   if (!fs.existsSync(src)) continue;
   fs.watch(src, { persistent: true }, () => copyOne(file));
+}
+
+for (const file of offscreenFiles) {
+  const src = path.join(offscreenSrcDir, file);
+  if (!fs.existsSync(src)) continue;
+  const dest = path.join(offscreenDistDir, file);
+  fs.watch(src, { persistent: true }, () => {
+    if (!fs.existsSync(src)) return;
+    fs.copyFileSync(src, dest);
+    console.log(`[copy-static] ${file}`);
+  });
 }
 
 // Keep process alive

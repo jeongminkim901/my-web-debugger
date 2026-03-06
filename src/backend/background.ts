@@ -5,7 +5,9 @@ let recording = false;
 let sessionStartedAt = null;
 let sessionEndedAt = null;
 
-// Public viewer (GitHub Pages) for sharing.
+// Viewer/share configuration.
+// Flip ENABLE_SERVER_SHARING back to true when you want to re-enable the server flow.
+const ENABLE_SERVER_SHARING = false;
 const PUBLIC_VIEWER_URL = "https://jeongminkim901.github.io/my-web-debugger/";
 const PUBLIC_VIEWER_MAX_INLINE_BYTES = 700_000; // keep URL reasonably short
 const SCREENSHOT_MAX_INLINE_BYTES = 200_000;
@@ -13,6 +15,8 @@ const SERVER_BASE_URL = "http://192.168.20.112";
 const SERVER_VIEWER_BASE_URL = "http://192.168.20.112";
 const SERVER_TTL_DAYS = 30;
 const SERVER_TTL_SECONDS = SERVER_TTL_DAYS * 24 * 60 * 60;
+const OFFSCREEN_RECORDER_URL = "dist/offscreen/recorder.html";
+const ERROR_SCREENSHOT_LIMIT = 3;
 
 // tabId -> { console: [], network: [], requests: Map() }
 const store = new Map();
@@ -225,6 +229,7 @@ function installDebuggerEventsOnce() {
 
         data.network.push(item);
         state.requests.delete(requestId);
+        void maybeCaptureErrorScreenshot(tabId, item.statusCode, item.url);
       });
     }
   });
@@ -269,7 +274,15 @@ async function detachDebugger(tabId): Promise<{ ok: boolean; error?: string | nu
 
 function ensure(tabId) {
   if (!store.has(tabId)) {
-    store.set(tabId, { console: [], network: [], websockets: [], requests: new Map() });
+    store.set(tabId, {
+      console: [],
+      network: [],
+      websockets: [],
+      requests: new Map(),
+      errorScreenshots: [],
+      errorScreenshot: null,
+      errorScreenshotAt: null
+    });
   }
   return store.get(tabId);
 }
@@ -471,6 +484,9 @@ function buildExportData({ tabId, tab, data, meta, screenshot }) {
     session,
     meta: meta || null,
     screenshot: screenshot || null,
+    errorScreenshot: data?.errorScreenshot || null,
+    errorScreenshotAt: data?.errorScreenshotAt || null,
+    errorScreenshots: data?.errorScreenshots || null,
     summary,
     console: data.console,
     network: normalizedNetwork,
@@ -557,6 +573,28 @@ async function captureScreenshot(tab) {
   }
 }
 
+async function maybeCaptureErrorScreenshot(tabId, statusCode, url) {
+  if (typeof statusCode !== "number" || statusCode < 400) return;
+  const data = ensure(tabId);
+  if (Array.isArray(data.errorScreenshots) && data.errorScreenshots.length >= ERROR_SCREENSHOT_LIMIT) return;
+  chrome.tabs.get(tabId, async (tab) => {
+    if (!tab || !tab.active) return;
+    const shot = await captureScreenshot(tab);
+    if (shot) {
+      const at = Date.now();
+      data.errorScreenshot = data.errorScreenshot || shot;
+      data.errorScreenshotAt = data.errorScreenshotAt || at;
+      if (!Array.isArray(data.errorScreenshots)) data.errorScreenshots = [];
+      data.errorScreenshots.push({
+        dataUrl: shot,
+        at,
+        statusCode,
+        url: url || null
+      });
+    }
+  });
+}
+
 function isInlineSafe(text, screenshot) {
   const bytes = new TextEncoder().encode(text);
   if (bytes.length > PUBLIC_VIEWER_MAX_INLINE_BYTES) return false;
@@ -599,6 +637,63 @@ function normalizeBaseUrl(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
   return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+}
+
+async function ensureOffscreenRecorder() {
+  const offscreen = chrome.offscreen as any;
+  if (!offscreen) return false;
+  if (await offscreen.hasDocument?.()) return true;
+  try {
+    await offscreen.createDocument({
+      url: OFFSCREEN_RECORDER_URL,
+      reasons: [offscreen.Reason?.USER_MEDIA || "USER_MEDIA"],
+      justification: "Record tab video for local session playback."
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function closeOffscreenRecorder() {
+  const offscreen = chrome.offscreen as any;
+  if (!offscreen) return;
+  try {
+    if (await offscreen.hasDocument?.()) {
+      await offscreen.closeDocument();
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function startVideoRecording(tabId) {
+  const ok = await ensureOffscreenRecorder();
+  if (!ok) return false;
+  try {
+    chrome.runtime.sendMessage({ type: "REC_START", tabId });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function stopVideoRecording() {
+  try {
+    chrome.runtime.sendMessage({ type: "REC_STOP" });
+  } finally {
+    await closeOffscreenRecorder();
+  }
+}
+
+async function stopVideoRecordingAndWait() {
+  try {
+    await new Promise<void>((resolve) => {
+      chrome.runtime.sendMessage({ type: "REC_STOP_WAIT" }, () => resolve());
+    });
+  } finally {
+    await closeOffscreenRecorder();
+  }
 }
 
 function buildShareViewerUrl(viewerBaseUrl, id) {
@@ -678,11 +773,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sessionEndedAt = null;
 
     const tabId = sender.tab?.id || msg.tabId;
-    if (tabId) store.set(tabId, { console: [], network: [], websockets: [], requests: new Map() });
+    if (tabId) {
+      store.set(tabId, {
+        console: [],
+        network: [],
+        websockets: [],
+        requests: new Map(),
+        errorScreenshots: [],
+        errorScreenshot: null,
+        errorScreenshotAt: null
+      });
+    }
 
     if (tabId && isDeepCaptureEnabled(tabId)) {
       void attachDebugger(tabId);
     }
+
+    if (tabId) void startVideoRecording(tabId);
 
     sendResponse({ ok: true, clearedTabId: tabId || null });
     return true;
@@ -694,6 +801,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     for (const [tabId, state] of debuggerState.entries()) {
       if (state.attached) void detachDebugger(tabId);
     }
+    void stopVideoRecording();
     sendResponse({ ok: true });
     return true;
   }
@@ -754,6 +862,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       error: p.error ?? null,
       pageUrl: p.pageUrl ?? null
     });
+    void maybeCaptureErrorScreenshot(tabId, p.statusCode, p.url);
 
     sendResponse({ ok: true });
     return true;
@@ -807,76 +916,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const meta = await loadMeta(tabId);
         const screenshot = await captureScreenshot(tab);
         const exportData = buildExportData({ tabId, tab, data, meta, screenshot });
+        await saveExportToSession(tabId, exportData);
+        await stopVideoRecordingAndWait();
 
-        try {
-          const shareRes = await shareToServer(exportData);
-          if (!shareRes.ok) {
-            sendResponse({ ok: false, error: shareRes.error || "share_failed" });
-            return;
-          }
-          const viewerUrl = buildShareViewerUrl(SERVER_VIEWER_BASE_URL, shareRes.id);
-          chrome.tabs.create({ url: viewerUrl }, () => {
-            sendResponse({ ok: true, public: false, inline: false, id: shareRes.id, url: viewerUrl });
-          });
-          return;
-        } catch (err) {
-          sendResponse({ ok: false, error: "share_failed" });
-          return;
-        }
-
-        const json = JSON.stringify(exportData, null, 2);
-        const inlineSafe = isInlineSafe(json, exportData.screenshot);
-
-        if (inlineSafe) {
-          const encoded = await encodeForUrlPayload(json);
-          const payloadBytes = encoded?.byteLength ?? Number.POSITIVE_INFINITY;
-          if (payloadBytes > PUBLIC_VIEWER_MAX_INLINE_BYTES) {
-            // Fallback: download JSON for large payloads.
-            const filename = makeFilename(exportData);
-            const dataUrl = "data:application/json;charset=utf-8," + encodeURIComponent(json);
-
-            chrome.downloads.download(
-              { url: dataUrl, filename, saveAs: true },
-              (downloadId) => {
-                const err = chrome.runtime.lastError;
-                if (err || !downloadId) {
-                  sendResponse({ ok: false, error: err?.message || "download_failed" });
-                  return;
-                }
-                const viewerUrl = `${PUBLIC_VIEWER_URL}?t=${Date.now()}`;
-                chrome.tabs.create({ url: viewerUrl }, () => {
-                  sendResponse({ ok: true, downloadId, filename, public: true, inline: false, url: viewerUrl });
-                });
-              }
-            );
-            return;
-          }
-
-          const viewerUrl = `${PUBLIC_VIEWER_URL}#data=${encoded.payload}`;
-          chrome.tabs.create({ url: viewerUrl }, () => {
-            sendResponse({ ok: true, public: true, inline: true, url: viewerUrl });
-          });
-          return;
-        }
-
-        // Fallback: download JSON for large payloads.
-        const filename = makeFilename(exportData);
-        const dataUrl = "data:application/json;charset=utf-8," + encodeURIComponent(json);
-
-        chrome.downloads.download(
-          { url: dataUrl, filename, saveAs: true },
-          (downloadId) => {
-            const err = chrome.runtime.lastError;
-            if (err || !downloadId) {
-              sendResponse({ ok: false, error: err?.message || "download_failed" });
+        if (ENABLE_SERVER_SHARING) {
+          try {
+            const shareRes = await shareToServer(exportData);
+            if (!shareRes.ok) {
+              sendResponse({ ok: false, error: shareRes.error || "share_failed" });
               return;
             }
-            const viewerUrl = `${PUBLIC_VIEWER_URL}?t=${Date.now()}`;
+            const viewerUrl = buildShareViewerUrl(SERVER_VIEWER_BASE_URL, shareRes.id);
             chrome.tabs.create({ url: viewerUrl }, () => {
-              sendResponse({ ok: true, downloadId, filename, public: true, inline: false, url: viewerUrl });
+              sendResponse({ ok: true, public: false, inline: false, id: shareRes.id, url: viewerUrl });
             });
+            return;
+          } catch (err) {
+            sendResponse({ ok: false, error: "share_failed" });
+            return;
           }
-        );
+        }
+
+        const localViewerBase = chrome.runtime.getURL("viewer.html");
+        const localViewerUrl = tabId ? `${localViewerBase}?tabId=${encodeURIComponent(String(tabId))}` : localViewerBase;
+        chrome.tabs.create({ url: localViewerUrl }, () => {
+          sendResponse({ ok: true, local: true, url: localViewerUrl });
+        });
+        return;
+
       });
     })();
 
@@ -908,14 +975,14 @@ chrome.webRequest.onBeforeRequest.addListener(
   { urls: ["<all_urls>"] }
 );
 
-chrome.webRequest.onHeadersReceived.addListener(
-  (details) => {
-    if (!recording) return;
-    if (details.tabId === -1 || !details.tabId) return;
-    if (isDeepCaptureEnabled(details.tabId)) return;
+  chrome.webRequest.onHeadersReceived.addListener(
+    (details) => {
+      if (!recording) return;
+      if (details.tabId === -1 || !details.tabId) return;
+      if (isDeepCaptureEnabled(details.tabId)) return;
 
-    const data = ensure(details.tabId);
-    const req = data.requests.get(details.requestId);
+      const data = ensure(details.tabId);
+      const req = data.requests.get(details.requestId);
 
     const item = req || {
       id: details.requestId,
@@ -930,11 +997,12 @@ chrome.webRequest.onHeadersReceived.addListener(
     item.endTime = Date.now();
     if (item.startTime) item.durationMs = item.endTime - item.startTime;
 
-    data.network.push(item);
-    data.requests.delete(details.requestId);
-  },
-  { urls: ["<all_urls>"] }
-);
+      data.network.push(item);
+      data.requests.delete(details.requestId);
+      void maybeCaptureErrorScreenshot(details.tabId, item.statusCode, item.url);
+    },
+    { urls: ["<all_urls>"] }
+  );
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (debuggerState.has(tabId)) {
