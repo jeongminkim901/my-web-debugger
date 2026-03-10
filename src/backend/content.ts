@@ -25,6 +25,57 @@ function safeSendMessage(message: unknown) {
   }
 }
 
+
+function sendEnvOnce() {
+  try {
+    if ((window as any).__MY_DEBUGGER_ENV_SENT) return;
+    (window as any).__MY_DEBUGGER_ENV_SENT = true;
+
+    const uaData = (navigator as any).userAgentData;
+    const env = {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+      languages: navigator.languages,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      devicePixelRatio: window.devicePixelRatio,
+      screen: {
+        width: window.screen.width,
+        height: window.screen.height,
+        availWidth: window.screen.availWidth,
+        availHeight: window.screen.availHeight,
+        colorDepth: window.screen.colorDepth,
+        pixelDepth: window.screen.pixelDepth
+      },
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight
+      },
+      uaData: uaData ? { brands: uaData.brands, mobile: uaData.mobile } : null
+    };
+
+    if (uaData?.getHighEntropyValues) {
+      uaData.getHighEntropyValues([
+        "platform",
+        "platformVersion",
+        "architecture",
+        "model",
+        "uaFullVersion",
+        "fullVersionList"
+      ]).then((hi) => {
+        env.uaData = { ...(env.uaData || {}), ...hi };
+        safeSendMessage({ type: "ENV", payload: env });
+      }).catch(() => {
+        safeSendMessage({ type: "ENV", payload: env });
+      });
+      return;
+    }
+
+    safeSendMessage({ type: "ENV", payload: env });
+  } catch {
+    // ignore
+  }
+}
 // console ?´ë²¤??
 window.addEventListener("MY_DEBUGGER_CONSOLE", (e: Event) => {
   safeSendMessage({ type: "CONSOLE_EVENT", payload: (e as CustomEvent).detail });
@@ -34,4 +85,11 @@ window.addEventListener("MY_DEBUGGER_CONSOLE", (e: Event) => {
 window.addEventListener("MY_DEBUGGER_NETWORK", (e: Event) => {
   safeSendMessage({ type: "NETWORK_EVENT", payload: (e as CustomEvent).detail });
 });
+
+
+
+
+
+sendEnvOnce();
+window.addEventListener("load", () => sendEnvOnce());
 

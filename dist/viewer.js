@@ -24,6 +24,7 @@
     // Meta / extra
     const metaNote = el("metaNote");
     const metaTags = el("metaTags");
+    const envBox = el("envBox");
     const errorSummaryStats = el("errorSummaryStats");
     const errorSummaryList = el("errorSummaryList");
     const kpisWrap = el("kpis");
@@ -286,6 +287,10 @@
                 return;
             const src = img.getAttribute("data-shot-src") || "";
             const meta = img.getAttribute("data-shot-meta") || "";
+            const idxRaw = img.getAttribute("data-shot-idx");
+            const idx = idxRaw !== null ? Number(idxRaw) : NaN;
+            if (Number.isFinite(idx))
+                return openShotModalAt(idx);
             if (src)
                 openShotModal(src, meta);
         });
@@ -345,6 +350,7 @@
             return;
         content.classList.remove("hidden");
         const created = session.createdAtIso || (session.createdAt ? new Date(session.createdAt).toISOString() : null);
+        const env = session.env || null;
         const sess = session.session;
         const sessionText = sess
             ? `session: ${escapeHtml(sess.startedAtIso || "-")} → ${escapeHtml(sess.endedAtIso || "-")} (${escapeHtml(formatDuration(sess.durationMs))})`
@@ -356,6 +362,58 @@
       <span class="pill">${sessionText}</span>
       <span class="pill muted">Tip: 행 클릭=상호 하이라이트(±${HILITE_WINDOW_MS}ms, same-origin) · ESC 해제</span>
     `;
+        if (envBox) {
+            if (!env) {
+                envBox.textContent = "-";
+            }
+            else {
+                const lang = Array.isArray(env.languages) ? env.languages.join(", ") : (env.language || "-");
+                const browser = (() => {
+                    const uaData = env.uaData;
+                    if (uaData?.fullVersionList?.length) {
+                        const preferred = uaData.fullVersionList.find((b) => /Chrome|Chromium/i.test(b.brand))
+                            || uaData.fullVersionList[0];
+                        return `${preferred.brand} ${preferred.version}`;
+                    }
+                    if (uaData?.uaFullVersion && Array.isArray(uaData.brands) && uaData.brands[0]) {
+                        return `${uaData.brands[0].brand} ${uaData.uaFullVersion}`;
+                    }
+                    return env.userAgent || "-";
+                })();
+                const screen = env.screen
+                    ? `${env.screen.width}x${env.screen.height} (avail ${env.screen.availWidth}x${env.screen.availHeight})`
+                    : "-";
+                const viewport = env.viewport
+                    ? `${env.viewport.width}x${env.viewport.height} @${env.devicePixelRatio || "-"}x`
+                    : "-";
+                const capturedAt = env.capturedAt ? new Date(env.capturedAt).toISOString() : "-";
+                const url = env.url || "-";
+                const osLabel = (() => {
+                    const platform = String(env.platform || "").toLowerCase();
+                    const uaPlat = String(env.uaData?.platform || "").toLowerCase();
+                    const pvRaw = env.uaData?.platformVersion || "";
+                    const isWin = platform.includes("win") || uaPlat.includes("win");
+                    if (!isWin)
+                        return env.platform || env.uaData?.platform || "-";
+                    let version = "";
+                    if (typeof pvRaw === "string" && pvRaw) {
+                        const major = pvRaw.split(".")[0];
+                        version = major ? `/${major}.` : "";
+                    }
+                    return `Win${version}`;
+                })();
+                envBox.innerHTML = `
+          <div class="small">OS: ${escapeHtml(osLabel)}</div>
+          <div class="small">Browser: ${escapeHtml(browser)}</div>
+          <div class="small">Lang: ${escapeHtml(lang)}</div>
+          <div class="small">TZ: ${escapeHtml(env.timezone || "-")}</div>
+          <div class="small">Screen: ${escapeHtml(screen)}</div>
+          <div class="small">Viewport: ${escapeHtml(viewport)}</div>
+          <div class="small">Captured: ${escapeHtml(capturedAt)}</div>
+          <div class="small">URL: ${escapeHtml(url)}</div>
+        `;
+            }
+        }
         const meta = session.meta || {};
         if (metaNote)
             metaNote.textContent = meta.note || "-";
@@ -392,7 +450,7 @@
         </div>
       `).join("");
         el("hosts").innerHTML = hosts || `<div class="muted">데이터 없음</div>`;
-        el("raw").textContent = JSON.stringify(session, null, 2);
+        el("raw").textContent = JSON.stringify(sanitizeForRaw(session), null, 2);
         renderTables();
         renderErrorSummary();
         renderTimeline();
@@ -541,6 +599,7 @@
                  src="${escapeHtml(src)}"
                  data-shot-src="${escapeHtml(src)}"
                  data-shot-meta="${escapeHtml(meta)}"
+                 data-shot-idx="${escapeHtml(String(i))}"
                  alt="Error screenshot ${i + 1}" />
           </div>
         `;
@@ -573,6 +632,7 @@
              src="${escapeHtml(s)}"
              data-shot-src="${escapeHtml(s)}"
              data-shot-meta="${escapeHtml(meta)}"
+             data-shot-idx="0"
              alt="${escapeHtml(label)}" />
       </div>
     `;
@@ -963,6 +1023,22 @@
         return String(s).replace(/[&<>"']/g, (c) => ({
             "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
         }[c]));
+    }
+    function sanitizeForRaw(data) {
+        const clone = JSON.parse(JSON.stringify(data || {}));
+        if (clone.screenshot && typeof clone.screenshot === "string") {
+            clone.screenshot = `[dataUrl omitted; ${clone.screenshot.length} chars]`;
+        }
+        if (clone.errorScreenshot && typeof clone.errorScreenshot === "string") {
+            clone.errorScreenshot = `[dataUrl omitted; ${clone.errorScreenshot.length} chars]`;
+        }
+        if (Array.isArray(clone.errorScreenshots)) {
+            clone.errorScreenshots = clone.errorScreenshots.map((x) => ({
+                ...x,
+                dataUrl: x?.dataUrl ? `[dataUrl omitted; ${String(x.dataUrl).length} chars]` : null
+            }));
+        }
+        return clone;
     }
     // ---------- Recording (IndexedDB) ----------
     const RECORDING_DB_NAME = "my-web-debugger";

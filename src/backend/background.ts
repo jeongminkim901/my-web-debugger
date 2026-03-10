@@ -285,7 +285,8 @@ function ensure(tabId) {
       requests: new Map(),
       errorScreenshots: [],
       errorScreenshot: null,
-      errorScreenshotAt: null
+      errorScreenshotAt: null,
+      env: null
     });
   }
   return store.get(tabId);
@@ -491,6 +492,7 @@ function buildExportData({ tabId, tab, data, meta, screenshot }) {
     errorScreenshot: data?.errorScreenshot || null,
     errorScreenshotAt: data?.errorScreenshotAt || null,
     errorScreenshots: data?.errorScreenshots || null,
+    env: data?.env || null,
     summary,
     console: data.console,
     network: normalizedNetwork,
@@ -812,7 +814,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         requests: new Map(),
         errorScreenshots: [],
         errorScreenshot: null,
-        errorScreenshotAt: null
+        errorScreenshotAt: null,
+        env: null
       });
     }
 
@@ -844,6 +847,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const ok = tabId ? await saveMeta(tabId, meta) : false;
       sendResponse({ ok: !!ok });
     })();
+    return true;
+  }
+
+  if (msg.type === "ENV") {
+    const tabId = sender.tab?.id;
+    if (!tabId) return true;
+    const data = ensure(tabId);
+    data.env = {
+      ...(msg.payload || {}),
+      capturedAt: Date.now(),
+      url: sender.tab?.url || null
+    };
+    sendResponse({ ok: true });
     return true;
   }
 
