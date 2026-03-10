@@ -17,6 +17,9 @@ const SERVER_TTL_DAYS = 30;
 const SERVER_TTL_SECONDS = SERVER_TTL_DAYS * 24 * 60 * 60;
 const OFFSCREEN_RECORDER_URL = "dist/offscreen/recorder.html";
 const ERROR_SCREENSHOT_LIMIT = 3;
+const ERROR_CLIP_PRE_MS = 10_000;
+const ERROR_CLIP_POST_MS = 10_000;
+const ERROR_CLIP_MAX = 3;
 
 // tabId -> { console: [], network: [], requests: Map() }
 const store = new Map();
@@ -230,6 +233,7 @@ function installDebuggerEventsOnce() {
         data.network.push(item);
         state.requests.delete(requestId);
         void maybeCaptureErrorScreenshot(tabId, item.statusCode, item.url);
+        maybeCaptureErrorClip(tabId, item.statusCode, item.url);
       });
     }
   });
@@ -595,6 +599,25 @@ async function maybeCaptureErrorScreenshot(tabId, statusCode, url) {
   });
 }
 
+function maybeCaptureErrorClip(tabId, statusCode, url) {
+  if (!recording) return;
+  if (typeof statusCode !== "number" || statusCode < 400) return;
+  try {
+    chrome.runtime.sendMessage({
+      type: "REC_MARK",
+      tabId,
+      statusCode,
+      url,
+      at: Date.now(),
+      preMs: ERROR_CLIP_PRE_MS,
+      postMs: ERROR_CLIP_POST_MS,
+      maxClips: ERROR_CLIP_MAX
+    }, () => void chrome.runtime.lastError);
+  } catch {
+    // ignore
+  }
+}
+
 function isInlineSafe(text, screenshot) {
   const bytes = new TextEncoder().encode(text);
   if (bytes.length > PUBLIC_VIEWER_MAX_INLINE_BYTES) return false;
@@ -670,12 +693,20 @@ async function closeOffscreenRecorder() {
 async function startVideoRecording(tabId) {
   const ok = await ensureOffscreenRecorder();
   if (!ok) return false;
-  try {
-    chrome.runtime.sendMessage({ type: "REC_START", tabId });
-    return true;
-  } catch {
-    return false;
-  }
+  return new Promise((resolve) => {
+    try {
+      chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+        const err = chrome.runtime.lastError;
+        if (err || !streamId) {
+          console.warn("getMediaStreamId failed", err?.message);
+          return resolve(false);
+        }
+        chrome.runtime.sendMessage({ type: "REC_START", tabId, streamId }, () => resolve(true));
+      });
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 async function stopVideoRecording() {
@@ -863,6 +894,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       pageUrl: p.pageUrl ?? null
     });
     void maybeCaptureErrorScreenshot(tabId, p.statusCode, p.url);
+    maybeCaptureErrorClip(tabId, p.statusCode, p.url);
 
     sendResponse({ ok: true });
     return true;
@@ -937,7 +969,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         }
 
-        const localViewerBase = chrome.runtime.getURL("viewer.html");
+        const localViewerBase = chrome.runtime.getURL("dist/viewer.html");
         const localViewerUrl = tabId ? `${localViewerBase}?tabId=${encodeURIComponent(String(tabId))}` : localViewerBase;
         chrome.tabs.create({ url: localViewerUrl }, () => {
           sendResponse({ ok: true, local: true, url: localViewerUrl });
@@ -1000,6 +1032,7 @@ chrome.webRequest.onBeforeRequest.addListener(
       data.network.push(item);
       data.requests.delete(details.requestId);
       void maybeCaptureErrorScreenshot(details.tabId, item.statusCode, item.url);
+      maybeCaptureErrorClip(details.tabId, item.statusCode, item.url);
     },
     { urls: ["<all_urls>"] }
   );

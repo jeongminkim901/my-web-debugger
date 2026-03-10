@@ -1,0 +1,135 @@
+﻿<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: sans-serif; width: 260px; padding: 12px; }
+      button { width: 100%; margin: 6px 0; padding: 10px; cursor: pointer; }
+      input, textarea {
+        width: 100%;
+        margin: 6px 0;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 12px;
+        box-sizing: border-box;
+      }
+      textarea { resize: vertical; min-height: 60px; }
+      #recBadge {
+        display:inline-block;
+        padding:4px 10px;
+        border-radius:999px;
+        font-size:12px;
+        border:1px solid #ccc;
+        margin-bottom:10px;
+      }
+      #status { margin-top:10px; font-size:12px; color:#666; min-height: 18px; }
+      #toast {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        background: #111826;
+        color: #e6edf3;
+        border: 1px solid #1f2a3a;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        display: none;
+        z-index: 10;
+      }
+      #sharePanel {
+        margin-top: 10px;
+        padding: 8px;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        display: none;
+      }
+      #shareUrl {
+        width: 100%;
+        font-size: 11px;
+        margin: 6px 0;
+      }
+      .row {
+        display: flex;
+        gap: 6px;
+      }
+      .row button {
+        flex: 1 1 0;
+      }
+      #metaModal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      #metaModal .box {
+        width: 90%;
+        max-width: 320px;
+        background: #fff;
+        border-radius: 10px;
+        padding: 12px;
+        border: 1px solid #ddd;
+      }
+      #metaModal .title {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #111;
+      }
+      #metaModal .actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      #metaModal .actions button {
+        flex: 1 1 0;
+        padding: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="recBadge">OFF</div>
+
+    <button id="start">Start Recording</button>
+    <button id="stop">Stop Recording</button>
+
+    <button id="openViewer">Open Viewer (Share)</button>
+    <button id="export">Export JSON</button>
+
+    <label style="display:flex; align-items:center; gap:8px; font-size:12px; margin:8px 0;">
+      <input id="deepCapture" type="checkbox" />
+      Deep Capture (response bodies)
+    </label>
+
+    <textarea id="note" placeholder="Session note (optional)"></textarea>
+    <input id="tags" placeholder="Tags (comma separated)" />
+
+    <div id="status"></div>
+    <div id="sharePanel">
+      <div style="font-size:12px; color:#444;">Last share link</div>
+      <input id="shareUrl" readonly />
+      <div class="row">
+        <button id="copyShare">Copy Link</button>
+        <button id="openShare">Open Link</button>
+      </div>
+    </div>
+    <div id="metaModal">
+      <div class="box">
+        <div class="title">Add note & tags before sharing</div>
+        <textarea id="modalNote" placeholder="Session note (optional)"></textarea>
+        <input id="modalTags" placeholder="Tags (comma separated)" />
+        <div class="actions">
+          <button id="metaCancel">Cancel</button>
+          <button id="metaSave">Save</button>
+        </div>
+      </div>
+    </div>
+    <div id="toast"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

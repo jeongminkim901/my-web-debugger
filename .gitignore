@@ -1,5 +1,6 @@
 node_modules/
-test-results/
-playwright-report/
-dist/
-*.tsbuildinfo
+reports/
+.pw-user/
+.DS_Store
+npm-debug.log*
+*.log

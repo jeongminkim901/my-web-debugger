@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Debug Session Viewer</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; background:#0b0f14; color:#e6edf3; }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    h2 { margin-top: 22px; font-size: 16px; }
+    .muted { color:#9aa4b2; font-size: 12px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .card { background:#111826; border:1px solid #1f2a3a; border-radius: 12px; padding: 12px; }
+    .drop { border: 2px dashed #2a3a52; background:#0f1622; border-radius: 14px; padding: 18px; }
+    .drop.drag { opacity: .7; }
+    .kpi { min-width: 160px; }
+    .kpi .v { font-size: 22px; font-weight: 700; margin-top: 6px; }
+    input, select { background:#0f1622; border:1px solid #2a3a52; color:#e6edf3; border-radius: 10px; padding:10px; outline:none; }
+    input { width: 340px; max-width: 100%; }
+    .btn { cursor:pointer; user-select:none; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; overflow:hidden; border-radius: 12px; }
+    th, td { border-bottom: 1px solid #1f2a3a; padding: 10px; font-size: 13px; vertical-align: top; }
+    th { background:#0f1622; text-align: left; position: sticky; top: 0; z-index: 1; }
+    tr:hover td { background:#0f1622; }
+    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #2a3a52; }
+    .right { margin-left:auto; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .small { font-size: 12px; }
+    details { background:#0f1622; border:1px solid #1f2a3a; border-radius: 12px; padding: 10px; margin-top: 10px; }
+    summary { cursor:pointer; }
+    .grid2 { display:grid; grid-template-columns: 1fr; gap:12px; }
+    @media (min-width: 980px) {
+      .grid2 { grid-template-columns: 1fr 1fr; }
+    }
+    a { color:#7dd3fc; text-decoration:none; }
+    a:hover { text-decoration: underline; }
+    .hidden { display:none; }
+
+    /* ✅ Network 강조 스타일 */
+    .row-error td {
+      background: rgba(239, 68, 68, 0.10);
+      border-bottom-color: rgba(239, 68, 68, 0.18);
+    }
+    .row-warn td {
+      background: rgba(245, 158, 11, 0.10);
+      border-bottom-color: rgba(245, 158, 11, 0.18);
+    }
+
+    /* ✅ Console 강조 스타일 (추가) */
+    .row-con-error td {
+      background: rgba(239, 68, 68, 0.10);
+      border-bottom-color: rgba(239, 68, 68, 0.18);
+    }
+    .row-con-warn td {
+      background: rgba(245, 158, 11, 0.10);
+      border-bottom-color: rgba(245, 158, 11, 0.18);
+    }
+
+    /* ✅ 레벨 pill 색상 (추가) */
+    .pill-level { border-color: rgba(148, 163, 184, 0.35); }
+    .lvl-error { border-color: rgba(239, 68, 68, 0.60); color: rgba(239, 68, 68, 0.95); }
+    .lvl-warn  { border-color: rgba(245, 158, 11, 0.60); color: rgba(245, 158, 11, 0.95); }
+    .lvl-info  { border-color: rgba(59, 130, 246, 0.60); color: rgba(147, 197, 253, 0.95); }
+    .lvl-log   { border-color: rgba(148, 163, 184, 0.50); color: rgba(226, 232, 240, 0.90); }
+    .lvl-debug { border-color: rgba(16, 185, 129, 0.55); color: rgba(110, 231, 183, 0.95); }
+    .pill-src  { border-color: rgba(59, 130, 246, 0.55); color: rgba(147, 197, 253, 0.95); }
+    .pill-body { border-color: rgba(16, 185, 129, 0.55); color: rgba(110, 231, 183, 0.95); }
+  </style>
+</head>
+
+<body>
+  <h1>Debug Session Viewer</h1>
+  <div class="row muted" id="meta"></div>
+
+  <div class="drop card" id="drop">
+    <div class="row">
+      <div>
+        <div><b>JSON 파일 드래그앤드롭</b></div>
+        <div class="muted">확장 프로그램에서 Export한 JSON을 여기에 놓으면 자동으로 렌더링됩니다.</div>
+      </div>
+      <div class="right">
+        <label class="pill btn">
+          파일 선택
+          <input id="file" type="file" accept="application/json" style="display:none" />
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div id="content" class="hidden">
+    <h2>Summary</h2>
+    <div class="row" id="kpis"></div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="row">
+          <div><b>Slowest Top 5</b></div>
+        </div>
+        <div id="slowest"></div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div><b>Hosts</b></div>
+          <div class="muted right">요청 수 기준</div>
+        </div>
+        <div id="hosts"></div>
+      </div>
+    </div>
+
+    <h2>Network</h2>
+    <div class="row card">
+      <input id="netSearch" placeholder="검색: host / path / url" />
+      <select id="statusFilter">
+        <option value="all">상태: 전체</option>
+        <option value="2xx">2xx</option>
+        <option value="3xx">3xx</option>
+        <option value="4xx">4xx</option>
+        <option value="5xx">5xx</option>
+        <option value="unknown">unknown</option>
+      </select>
+      <select id="sortBy">
+        <option value="time_desc">정렬: 최신 시작</option>
+        <option value="time_asc">정렬: 오래된 시작</option>
+        <option value="dur_desc">정렬: 느린 순</option>
+        <option value="dur_asc">정렬: 빠른 순</option>
+      </select>
+
+      <button id="toggleSlow" class="pill btn" type="button" title="duration이 긴 요청만 보기">
+        Slow only: OFF
+      </button>
+      <button id="toggleBody" class="pill btn" type="button" title="body 있는 요청만 보기">
+        Body only: OFF
+      </button>
+
+      <span class="right muted" id="netCount"></span>
+    </div>
+    <div id="network"></div>
+
+    <h2>Console</h2>
+    <div class="row card">
+      <input id="conSearch" placeholder="검색: message" />
+      <select id="levelFilter">
+        <option value="all">레벨: 전체</option>
+        <option value="error">error</option>
+        <option value="warn">warn</option>
+        <option value="info">info</option>
+        <option value="log">log</option>
+        <option value="debug">debug</option>
+      </select>
+      <span class="right muted" id="conCount"></span>
+    </div>
+    <div id="console"></div>
+
+    <details class="card">
+      <summary><b>Raw JSON</b> <span class="muted">(원본 데이터 보기)</span></summary>
+      <pre id="raw" class="mono small" style="white-space: pre-wrap; word-break: break-word;"></pre>
+    </details>
+  </div>
+
+<script>
+  let session = null;
+
+  const el = (id) => document.getElementById(id);
+
+  const drop = el("drop");
+  const fileInput = el("file");
+  const content = el("content");
+
+  // Controls
+  const netSearch = el("netSearch");
+  const statusFilter = el("statusFilter");
+  const sortBy = el("sortBy");
+  const conSearch = el("conSearch");
+  const levelFilter = el("levelFilter");
+
+  // ✅ 느린 요청 threshold + 토글 상태
+  const SLOW_THRESHOLD_MS = 1000;
+  let slowOnly = false;
+  let bodyOnly = false;
+  const toggleSlowBtn = el("toggleSlow");
+  const toggleBodyBtn = el("toggleBody");
+
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+  drop.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    drop.classList.remove("drag");
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (file) loadFile(file);
+  });
+
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        session = JSON.parse(reader.result);
+        slowOnly = false;
+        bodyOnly = false;
+        if (toggleSlowBtn) toggleSlowBtn.textContent = "Slow only: OFF";
+        if (toggleBodyBtn) toggleBodyBtn.textContent = "Body only: OFF";
+        renderAll();
+      } catch (e) {
+        alert("JSON 파싱 실패: 파일이 올바른지 확인해줘!");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function base64UrlToBytes(b64url) {
+    const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "===".slice((b64.length + 3) % 4);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function decodeUrlPayload(payload) {
+    try {
+      const raw = (() => {
+        try { return decodeURIComponent(payload); } catch { return payload; }
+      })();
+
+      let mode = "raw";
+      let data = raw;
+      if (raw.startsWith("gz:")) {
+        mode = "gz";
+        data = raw.slice(3);
+      } else if (raw.startsWith("raw:")) {
+        data = raw.slice(4);
+      }
+
+      const bytes = base64UrlToBytes(data);
+
+      if (mode === "gz") {
+        if (typeof DecompressionStream === "undefined") return null;
+        const ds = new DecompressionStream("gzip");
+        const decompressed = await new Response(
+          new Blob([bytes]).stream().pipeThrough(ds)
+        ).arrayBuffer();
+        return new TextDecoder().decode(new Uint8Array(decompressed));
+      }
+
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  // Re-render on control changes
+  [netSearch, statusFilter, sortBy, conSearch, levelFilter].forEach(ctrl => {
+    ctrl.addEventListener("input", renderTables);
+    ctrl.addEventListener("change", renderTables);
+  });
+
+  // ✅ 느린 요청만 보기 토글
+  if (toggleSlowBtn) {
+    toggleSlowBtn.addEventListener("click", () => {
+      slowOnly = !slowOnly;
+      toggleSlowBtn.textContent = `Slow only: ${slowOnly ? "ON" : "OFF"}`;
+      renderNetworkTable();
+    });
+  }
+  if (toggleBodyBtn) {
+    toggleBodyBtn.addEventListener("click", () => {
+      bodyOnly = !bodyOnly;
+      toggleBodyBtn.textContent = `Body only: ${bodyOnly ? "ON" : "OFF"}`;
+      renderNetworkTable();
+    });
+  }
+
+  function formatDuration(ms) {
+    if (typeof ms !== "number") return "-";
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  }
+
+  function renderAll() {
+    content.classList.remove("hidden");
+
+    // Meta + Session 표시
+    const created = session.createdAtIso || (session.createdAt ? new Date(session.createdAt).toISOString() : null);
+
+    const sess = session.session;
+    const sessionText = sess
+      ? `session: ${escapeHtml(sess.startedAtIso || "-")} → ${escapeHtml(sess.endedAtIso || "-")} (${escapeHtml(formatDuration(sess.durationMs))})`
+      : `session: -`;
+
+    el("meta").innerHTML = `
+      <span class="pill">version: ${escapeHtml(session.version || "-")}</span>
+      <span class="pill">tabId: ${escapeHtml(String(session.tabId ?? "-"))}</span>
+      <span class="pill">createdAt: ${escapeHtml(created || "-")}</span>
+      <span class="pill">${sessionText}</span>
+    `;
+
+    // KPIs
+    const s = session.summary || {};
+    const total = s.totalRequests ?? (session.network?.length || 0);
+    const by = s.byStatusGroup || {};
+
+    el("kpis").innerHTML = `
+      ${kpi("Total Requests", total)}
+      ${kpi("2xx", by["2xx"] || 0)}
+      ${kpi("3xx", by["3xx"] || 0)}
+      ${kpi("4xx", by["4xx"] || 0)}
+      ${kpi("5xx", by["5xx"] || 0)}
+    `;
+
+    // Slowest
+    const slow = (s.slowestTop5 || []).map(x => `
+      <div class="row" style="padding:8px 0; border-bottom:1px solid #1f2a3a;">
+        <span class="pill mono">${escapeHtml(x.method || "-")}</span>
+        <span class="pill">${escapeHtml(String(x.statusCode ?? "-"))}</span>
+        <span class="pill">${escapeHtml(String(x.durationMs ?? "-"))}ms</span>
+        <span class="mono small" title="${escapeHtml(x.shortUrl || "")}">${escapeHtml(x.shortUrl || "")}</span>
+      </div>
+    `).join("");
+    el("slowest").innerHTML = slow || `<div class="muted">데이터 없음</div>`;
+
+    // Hosts
+    const hostsObj = s.byHost || {};
+    const hosts = Object.entries(hostsObj)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([host, cnt]) => `
+        <div class="row" style="padding:8px 0; border-bottom:1px solid #1f2a3a;">
+          <span class="mono">${escapeHtml(host)}</span>
+          <span class="right pill">${escapeHtml(String(cnt))}</span>
+        </div>
+      `).join("");
+    el("hosts").innerHTML = hosts || `<div class="muted">데이터 없음</div>`;
+
+    // Raw JSON
+    el("raw").textContent = JSON.stringify(session, null, 2);
+
+    // Render tables
+    renderTables();
+  }
+
+  function renderTables() {
+    renderNetworkTable();
+    renderConsoleTable();
+  }
+
+  // ✅ Network 행 강조
+  function getNetworkRowClass(item) {
+    const code = item.statusCode;
+    const dur = item.durationMs;
+
+    if (typeof code === "number" && code >= 400) return "row-error";
+    if (typeof dur === "number" && dur >= SLOW_THRESHOLD_MS) return "row-warn";
+    return "";
+  }
+
+  // ✅ Console 행 강조
+  function getConsoleRowClass(level) {
+    if (level === "error") return "row-con-error";
+    if (level === "warn") return "row-con-warn";
+    return "";
+  }
+
+  // ✅ Console 레벨 pill 클래스
+  function levelPillClass(level) {
+    if (level === "error") return "pill pill-level lvl-error";
+    if (level === "warn")  return "pill pill-level lvl-warn";
+    if (level === "info")  return "pill pill-level lvl-info";
+    if (level === "debug") return "pill pill-level lvl-debug";
+    return "pill pill-level lvl-log";
+  }
+
+  function hasBody(x) {
+    return x && ((x.requestBody !== null && x.requestBody !== undefined) || (x.responseBody !== null && x.responseBody !== undefined));
+  }
+
+  function getSourceLabel(x) {
+    if (!x) return "-";
+    if (x.type === "debugger" || x.transport === "debugger") return "debugger";
+    if (x.type === "page") return x.transport || "page";
+    return "webRequest";
+  }
+
+  function renderNetworkTable() {
+    const items = Array.isArray(session.network) ? session.network : [];
+    const q = (netSearch.value || "").trim().toLowerCase();
+    const status = statusFilter.value;
+
+    let filtered = items.filter(x => {
+      const hay = `${x.host || ""} ${x.path || ""} ${x.url || ""}`.toLowerCase();
+      const okQuery = q ? hay.includes(q) : true;
+      const okStatus = (status === "all") ? true : (String(x.statusGroup || "unknown") === status);
+      return okQuery && okStatus;
+    });
+
+    if (slowOnly) {
+      filtered = filtered.filter(x => typeof x.durationMs === "number" && x.durationMs >= SLOW_THRESHOLD_MS);
+    }
+    if (bodyOnly) {
+      filtered = filtered.filter(x => hasBody(x));
+    }
+
+    const sort = sortBy.value;
+    filtered.sort((a, b) => {
+      const aT = a.startedAt ?? 0;
+      const bT = b.startedAt ?? 0;
+      const aD = typeof a.durationMs === "number" ? a.durationMs : -1;
+      const bD = typeof b.durationMs === "number" ? b.durationMs : -1;
+
+      if (sort === "time_desc") return bT - aT;
+      if (sort === "time_asc") return aT - bT;
+      if (sort === "dur_desc") return bD - aD;
+      if (sort === "dur_asc") return aD - bD;
+      return 0;
+    });
+
+    el("netCount").textContent = `${filtered.length} / ${items.length}`;
+
+    const rows = filtered.map(x => {
+      const src = getSourceLabel(x);
+      const bodyBadge = hasBody(x) ? `<span class="pill pill-body">body</span>` : "";
+      return `
+      <tr class="${getNetworkRowClass(x)}">
+        <td class="mono small">${escapeHtml(x.method || "-")}</td>
+        <td><span class="pill pill-src">${escapeHtml(src)}</span></td>
+        <td>
+          <span class="pill">${escapeHtml(String(x.statusGroup || "unknown"))}</span>
+          <span class="pill">${escapeHtml(String(x.statusCode ?? "-"))}</span>
+        </td>
+        <td class="mono small">${escapeHtml(String(x.durationMs ?? "-"))}ms</td>
+        <td class="mono small" title="${escapeHtml(x.url || "")}">
+          ${escapeHtml(x.shortUrl || x.url || "")}
+          ${bodyBadge}
+          <div class="muted">${escapeHtml(x.host || "")}${escapeHtml(x.path || "")}</div>
+        </td>
+        <td class="mono small">${escapeHtml(x.startedAtIso || "-")}</td>
+      </tr>
+      `;
+    }).join("");
+
+    el("network").innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>Src</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>URL</th>
+            <th>Started</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || `<tr><td colspan="6" class="muted">결과 없음</td></tr>`}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderConsoleTable() {
+    const items = Array.isArray(session.console) ? session.console : [];
+    const q = (conSearch.value || "").trim().toLowerCase();
+    const level = levelFilter.value;
+
+    let filtered = items.filter(x => {
+      const msg = JSON.stringify(x.args || []);
+      const okQuery = q ? msg.toLowerCase().includes(q) : true;
+      const okLevel = (level === "all") ? true : (String(x.level || "") === level);
+      return okQuery && okLevel;
+    });
+
+    filtered.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    el("conCount").textContent = `${filtered.length} / ${items.length}`;
+
+    const rows = filtered.map(x => {
+      const lvl = String(x.level || "-");
+      const rowClass = getConsoleRowClass(lvl);
+      return `
+        <tr class="${rowClass}">
+          <td class="mono small">${escapeHtml(new Date(x.timestamp).toISOString())}</td>
+          <td><span class="${levelPillClass(lvl)}">${escapeHtml(lvl)}</span></td>
+          <td class="mono small" style="white-space: pre-wrap; word-break: break-word;">
+            ${escapeHtml(prettyArgs(x.args))}
+            <div class="muted">${escapeHtml(x.url || "")}</div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    el("console").innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Level</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || `<tr><td colspan="3" class="muted">결과 없음</td></tr>`}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function kpi(label, value) {
+    return `
+      <div class="card kpi">
+        <div class="muted">${escapeHtml(label)}</div>
+        <div class="v">${escapeHtml(String(value))}</div>
+      </div>
+    `;
+  }
+
+  function prettyArgs(args) {
+    try {
+      if (!Array.isArray(args)) return String(args ?? "");
+      if (args.length === 1) return JSON.stringify(args[0], null, 2);
+      return JSON.stringify(args, null, 2);
+    } catch {
+      return String(args);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[c]));
+  }
+
+  async function loadFromHashIfPossible() {
+    const hash = location.hash || "";
+    if (!hash.startsWith("#data=")) return false;
+    const payload = hash.slice("#data=".length);
+    const json = await decodeUrlPayload(payload);
+    if (!json) return false;
+    try {
+      session = JSON.parse(json);
+      slowOnly = false;
+      bodyOnly = false;
+      if (toggleSlowBtn) toggleSlowBtn.textContent = "Slow only: OFF";
+      if (toggleBodyBtn) toggleBodyBtn.textContent = "Body only: OFF";
+      renderAll();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  (async () => {
+    await loadFromHashIfPossible();
+  })();
+</script>
+</body>
+</html>

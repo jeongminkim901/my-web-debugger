@@ -3,15 +3,11 @@
     "target": "ES2022",
     "module": "ES2022",
     "lib": ["ES2022", "DOM"],
-    "allowJs": false,
-    "checkJs": false,
-    "strict": false,
-    "skipLibCheck": true,
-    "types": ["chrome", "node", "vitest/globals"],
+    "moduleResolution": "Bundler",
+    "strict": true,
     "esModuleInterop": true,
-    "rootDir": "src",
+    "skipLibCheck": true,
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["tests/**/*.ts", "node_modules"]
+  "include": ["src/**/*.ts"]
 }

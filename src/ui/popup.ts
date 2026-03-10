@@ -1,4 +1,3 @@
-export {};
 // popup.ts
 const statusEl = document.getElementById("status") as HTMLElement;
 const badgeEl = document.getElementById("recBadge") as HTMLElement;

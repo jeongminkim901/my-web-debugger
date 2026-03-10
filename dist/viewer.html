@@ -165,24 +165,10 @@
     .clip-card { background:#0b0f14; border:1px solid #1f2a3a; border-radius: 12px; padding: 8px; }
     .clip-meta { font-size: 11px; color:#9aa4b2; margin-top: 6px; }
     .clip-url { font-size: 11px; color:#9aa4b2; margin-top: 4px; word-break: break-all; }
-    .toast {
-      position: fixed;
-      right: 20px;
-      bottom: 20px;
-      background: rgba(15, 22, 34, 0.98);
-      border: 1px solid #2a3a52;
-      color: #e6edf3;
-      padding: 10px 14px;
-      border-radius: 10px;
-      font-size: 13px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-      z-index: 9999;
-    }
   </style>
 </head>
 
 <body>
-  <div id="toast" class="toast hidden"></div>
   <h1>Debug Session Viewer</h1>
   <div class="row muted" id="meta"></div>
   <div class="row">
@@ -310,27 +296,13 @@
     </div>
     <div id="console"></div>
 
-    <h2>WebSocket</h2>
-    <div class="row card">
-      <input id="wsSearch" placeholder="search url / payload" />
-      <select id="wsDirFilter">
-        <option value="all">direction: all</option>
-        <option value="open">open</option>
-        <option value="sent">sent</option>
-        <option value="received">received</option>
-        <option value="close">close</option>
-      </select>
-      <span class="right muted" id="wsCount"></span>
-    </div>
-    <div id="websockets"></div>
-
     <details class="card">
       <summary><b>Raw JSON</b> <span class="muted">(original data)</span></summary>
       <pre id="raw" class="mono small" style="white-space: pre-wrap; word-break: break-word;"></pre>
     </details>
 
     <details class="card">
-      <summary><b>Screenshot</b> <span class="muted">(captured at Open Viewer)</span></summary>
+      <summary><b>Screenshot</b> <span class="muted">(up to 3 of first 4xx/5xx)</span></summary>
       <div id="screenshotWrap" class="muted">No screenshot</div>
     </details>
     <div id="shotModal" class="shot-modal">
@@ -344,6 +316,12 @@
         <div id="shotModalMeta" class="shot-modal-meta"></div>
       </div>
     </div>
+
+    <details class="card">
+      <summary><b>Recording</b> <span class="muted">(starts at REC)</span></summary>
+      <div id="recordingWrap" class="muted">No recording</div>
+      <div id="clipWrap" class="muted" style="margin-top:8px;">No error clips</div>
+    </details>
   </div>
 
   <script src="viewer.js"></script>

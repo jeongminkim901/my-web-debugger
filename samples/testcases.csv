@@ -1,0 +1,8 @@
+case_id,title,steps,expected,base_url,enabled,tags
+TC-001,Open homepage,"goto https://example.com
+assert text=Example Domain
+screenshot",Page loads,,y,smoke
+TC-002,Search box demo,"goto https://example.com
+click css=body
+wait 500
+screenshot",Just a demo,,y,demo

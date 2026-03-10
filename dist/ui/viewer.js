@@ -1,11 +1,16 @@
 // viewer.js (Step 3-1 refined: tighter time window + same-origin constraint)
 (() => {
     let session = null;
+    let recordingBlob = null;
+    let recordingMime = null;
+    let recordingCreatedAt = null;
+    let recordingObjectUrl = null;
+    let clipObjectUrls = [];
+    let recordingClips = [];
     const el = (id) => document.getElementById(id);
     const drop = el("drop");
     const fileInput = el("file");
     const content = el("content");
-    const SERVER_BASE_URL = "http://192.168.20.112";
     const toastEl = el("toast");
     // Controls
     const netSearch = el("netSearch");
@@ -37,6 +42,9 @@
     const shotNext = el("shotNext");
     let shotItems = [];
     let shotIndex = -1;
+    const recordingWrap = el("recordingWrap");
+    const clipWrap = el("clipWrap");
+    const kpisWrap = el("kpis");
     // Toggles
     const SLOW_THRESHOLD_MS = 1000;
     // ✅ 너무 넓게 걸리는 문제 해결: 기본 3초 → 1.2초
@@ -66,8 +74,42 @@
         toastEl.classList.remove("hidden");
         setTimeout(() => toastEl.classList.add("hidden"), 2500);
     }
-    function showShareFetchError(message) {
-        showToast(message);
+    function openShotModalAt(index) {
+        if (!shotItems.length)
+            return;
+        if (!shotModal || !shotModalImg || !shotModalMeta)
+            return;
+        const safeIndex = ((index % shotItems.length) + shotItems.length) % shotItems.length;
+        const item = shotItems[safeIndex];
+        shotIndex = safeIndex;
+        shotModalImg.src = item.src;
+        shotModalMeta.textContent = item.meta || "";
+        shotModal.classList.add("open");
+        if (shotPrev)
+            shotPrev.disabled = shotItems.length <= 1;
+        if (shotNext)
+            shotNext.disabled = shotItems.length <= 1;
+    }
+    function openShotModal(src, meta) {
+        if (!shotItems.length)
+            shotItems = [{ src, meta }];
+        const idx = shotItems.findIndex((x) => x.src === src && x.meta === meta);
+        openShotModalAt(idx >= 0 ? idx : 0);
+    }
+    function stepShot(delta) {
+        if (!shotItems.length)
+            return;
+        openShotModalAt(shotIndex + delta);
+    }
+    function isModalOpen() {
+        return !!shotModal?.classList.contains("open");
+    }
+    function closeShotModal() {
+        if (!shotModal || !shotModalImg || !shotModalMeta)
+            return;
+        shotModal.classList.remove("open");
+        shotModalImg.src = "";
+        shotModalMeta.textContent = "";
     }
     // ---------- DnD ----------
     drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag"); });
@@ -96,7 +138,7 @@
                 renderAll();
             }
             catch {
-                alert("JSON 파싱 실패: 파일이 올바른지 확인해줘!");
+                alert("JSON 파싱 실패: 파일이 올바른지 확인해주세요");
             }
         };
         reader.readAsText(file);
@@ -163,6 +205,26 @@
             slowOnly = !slowOnly;
             syncToggleUI();
             renderNetworkTable();
+        });
+    }
+    // KPI click -> apply status filter
+    if (kpisWrap) {
+        kpisWrap.addEventListener("click", (e) => {
+            const target = e.target;
+            const card = target?.closest?.("[data-kpi]");
+            if (!card || !statusFilter)
+                return;
+            const key = card.getAttribute("data-kpi");
+            if (!key)
+                return;
+            if (key === "total") {
+                statusFilter.value = "all";
+            }
+            else {
+                statusFilter.value = key;
+            }
+            renderNetworkTable();
+            syncKpiActive();
         });
     }
     if (toggleNetErrorsBtn) {
@@ -287,43 +349,6 @@
         selectedConsoleKey = null;
         hiliteOrigin = null;
     }
-    function openShotModalAt(index) {
-        if (!shotItems.length)
-            return;
-        if (!shotModal || !shotModalImg || !shotModalMeta)
-            return;
-        const safeIndex = ((index % shotItems.length) + shotItems.length) % shotItems.length;
-        const item = shotItems[safeIndex];
-        shotIndex = safeIndex;
-        shotModalImg.src = item.src;
-        shotModalMeta.textContent = item.meta || "";
-        shotModal.classList.add("open");
-        if (shotPrev)
-            shotPrev.disabled = shotItems.length <= 1;
-        if (shotNext)
-            shotNext.disabled = shotItems.length <= 1;
-    }
-    function openShotModal(src, meta) {
-        if (!shotItems.length)
-            shotItems = [{ src, meta }];
-        const idx = shotItems.findIndex((x) => x.src === src && x.meta === meta);
-        openShotModalAt(idx >= 0 ? idx : 0);
-    }
-    function stepShot(delta) {
-        if (!shotItems.length)
-            return;
-        openShotModalAt(shotIndex + delta);
-    }
-    function isModalOpen() {
-        return !!shotModal?.classList.contains("open");
-    }
-    function closeShotModal() {
-        if (!shotModal || !shotModalImg || !shotModalMeta)
-            return;
-        shotModal.classList.remove("open");
-        shotModalImg.src = "";
-        shotModalMeta.textContent = "";
-    }
     function formatDuration(ms) {
         if (typeof ms !== "number")
             return "-";
@@ -356,12 +381,13 @@
         const total = s.totalRequests ?? (session.network?.length || 0);
         const by = s.byStatusGroup || {};
         el("kpis").innerHTML = `
-      ${kpi("Total Requests", total)}
-      ${kpi("2xx", by["2xx"] || 0)}
-      ${kpi("3xx", by["3xx"] || 0)}
-      ${kpi("4xx", by["4xx"] || 0)}
-      ${kpi("5xx", by["5xx"] || 0)}
+      ${kpi("Total Requests", total, "total")}
+      ${kpi("2xx", by["2xx"] || 0, "2xx")}
+      ${kpi("3xx", by["3xx"] || 0, "3xx")}
+      ${kpi("4xx", by["4xx"] || 0, "4xx")}
+      ${kpi("5xx", by["5xx"] || 0, "5xx")}
     `;
+        syncKpiActive();
         const slow = (s.slowestTop5 || []).map(x => `
       <div class="row" style="padding:8px 0; border-bottom:1px solid #1f2a3a;">
         <span class="pill mono">${escapeHtml(x.method || "-")}</span>
@@ -387,6 +413,7 @@
         renderErrorSummary();
         renderTimeline();
         renderScreenshot();
+        renderRecording();
     }
     function renderTables() {
         if (!session)
@@ -515,12 +542,46 @@
     function renderScreenshot() {
         if (!session || !screenshotWrap)
             return;
-        const s = session.screenshot;
+        const list = Array.isArray(session.errorScreenshots) ? session.errorScreenshots : [];
+        if (list.length) {
+            const items = list.map((x, i) => {
+                const ts = x?.at ? new Date(x.at).toISOString() : "-";
+                const code = x?.statusCode ?? "-";
+                const url = x?.url || "";
+                const src = x?.dataUrl || "";
+                const meta = `#${i + 1} · ${code} · ${ts}`;
+                return `
+          <div class="shot-item">
+            <div class="shot-meta">${escapeHtml(meta)}</div>
+            <div class="shot-url">${escapeHtml(url)}</div>
+            <img class="shot-thumb"
+                 src="${escapeHtml(src)}"
+                 data-shot-src="${escapeHtml(src)}"
+                 data-shot-meta="${escapeHtml(meta)}"
+                 alt="Error screenshot ${i + 1}" />
+          </div>
+        `;
+            }).join("");
+            shotItems = list.map((x, i) => {
+                const ts = x?.at ? new Date(x.at).toISOString() : "-";
+                const code = x?.statusCode ?? "-";
+                const src = x?.dataUrl || "";
+                const meta = `#${i + 1} · ${code} · ${ts}`;
+                return { src, meta };
+            }).filter((x) => !!x.src);
+            screenshotWrap.innerHTML = `<div class="shot-grid">${items}</div>`;
+            return;
+        }
+        const s = session.errorScreenshot || session.screenshot;
         if (!s) {
             screenshotWrap.textContent = "No screenshot";
             return;
         }
-        const meta = "Screenshot";
+        const label = session.errorScreenshot ? "Error screenshot" : "Screenshot";
+        const at = session.errorScreenshotAt
+            ? ` (${new Date(session.errorScreenshotAt).toISOString()})`
+            : "";
+        const meta = `${label}${at}`;
         shotItems = [{ src: s, meta }];
         screenshotWrap.innerHTML = `
       <div class="shot-item">
@@ -529,7 +590,7 @@
              src="${escapeHtml(s)}"
              data-shot-src="${escapeHtml(s)}"
              data-shot-meta="${escapeHtml(meta)}"
-             alt="${escapeHtml(meta)}" />
+             alt="${escapeHtml(label)}" />
       </div>
     `;
     }
@@ -717,6 +778,7 @@
         </tbody>
       </table>
     `;
+        syncKpiActive();
         if (selectedNetId && !currentNetMap.has(selectedNetId))
             clearNetDetail();
     }
@@ -927,13 +989,30 @@
         return `${ts}|${lvl}|${msg.slice(0, 80)}`;
     }
     // ---------- Helpers ----------
-    function kpi(label, value) {
+    function kpi(label, value, key) {
+        const activeKey = getActiveKpiKey();
+        const isActive = key && activeKey === key;
         return `
-      <div class="card kpi">
+      <div class="card kpi kpi-filter${isActive ? " kpi-active" : ""}" data-kpi="${escapeHtml(String(key || ""))}" title="Click to filter network">
         <div class="muted">${escapeHtml(label)}</div>
         <div class="v">${escapeHtml(String(value))}</div>
       </div>
     `;
+    }
+    function getActiveKpiKey() {
+        if (!statusFilter)
+            return "total";
+        const v = statusFilter.value || "all";
+        return v === "all" ? "total" : v;
+    }
+    function syncKpiActive() {
+        if (!kpisWrap)
+            return;
+        const activeKey = getActiveKpiKey();
+        kpisWrap.querySelectorAll("[data-kpi]").forEach((el) => {
+            const key = el.getAttribute("data-kpi");
+            el.classList.toggle("kpi-active", key === activeKey);
+        });
     }
     function prettyArgs(args) {
         try {
@@ -951,6 +1030,154 @@
         return String(s).replace(/[&<>"']/g, (c) => ({
             "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
         }[c]));
+    }
+    // ---------- Recording (IndexedDB) ----------
+    const RECORDING_DB_NAME = "my-web-debugger";
+    const RECORDING_DB_VERSION = 2;
+    const RECORDING_STORE = "recordings";
+    const RECORDING_CLIP_STORE = "recordingClips";
+    function openRecordingDb() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(RECORDING_DB_NAME, RECORDING_DB_VERSION);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(RECORDING_STORE)) {
+                    db.createObjectStore(RECORDING_STORE, { keyPath: "tabId" });
+                }
+                if (!db.objectStoreNames.contains(RECORDING_CLIP_STORE)) {
+                    const store = db.createObjectStore(RECORDING_CLIP_STORE, { keyPath: "clipId" });
+                    store.createIndex("tabId", "tabId", { unique: false });
+                    store.createIndex("createdAt", "createdAt", { unique: false });
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    function txComplete(tx) {
+        return new Promise((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+    }
+    async function loadRecordingForTab(tabId) {
+        if (!tabId || !Number.isFinite(tabId))
+            return;
+        try {
+            const db = await openRecordingDb();
+            const tx = db.transaction(RECORDING_STORE, "readonly");
+            const req = tx.objectStore(RECORDING_STORE).get(tabId);
+            const data = await new Promise((resolve, reject) => {
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+            await txComplete(tx);
+            db.close();
+            if (data?.blob) {
+                recordingBlob = data.blob;
+                recordingMime = data.mime || recordingBlob.type || "video/webm";
+                recordingCreatedAt = data.createdAt || null;
+            }
+            recordingClips = await loadClipsForTab(tabId);
+        }
+        catch {
+            // ignore
+        }
+    }
+    async function loadClipsForTab(tabId) {
+        try {
+            const db = await openRecordingDb();
+            const tx = db.transaction(RECORDING_CLIP_STORE, "readonly");
+            const store = tx.objectStore(RECORDING_CLIP_STORE);
+            const idx = store.index("tabId");
+            const clips = [];
+            await new Promise((resolve, reject) => {
+                const req = idx.openCursor(IDBKeyRange.only(tabId));
+                req.onsuccess = () => {
+                    const cursor = req.result;
+                    if (cursor) {
+                        clips.push(cursor.value);
+                        cursor.continue();
+                    }
+                    else {
+                        resolve();
+                    }
+                };
+                req.onerror = () => reject(req.error);
+            });
+            await txComplete(tx);
+            db.close();
+            return clips
+                .map((c) => ({
+                blob: c.blob,
+                mime: c.mime || "video/webm",
+                createdAt: c.createdAt || null,
+                statusCode: c.statusCode ?? null,
+                url: c.url ?? null,
+                at: c.at ?? null
+            }))
+                .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        }
+        catch {
+            return [];
+        }
+    }
+    function renderRecording() {
+        if (!recordingWrap)
+            return;
+        if (!recordingBlob) {
+            recordingWrap.textContent = "No recording";
+            if (clipWrap)
+                clipWrap.textContent = "No error clips";
+            return;
+        }
+        if (recordingObjectUrl) {
+            URL.revokeObjectURL(recordingObjectUrl);
+            recordingObjectUrl = null;
+        }
+        recordingObjectUrl = URL.createObjectURL(recordingBlob);
+        recordingWrap.innerHTML = "";
+        const video = document.createElement("video");
+        video.controls = true;
+        video.src = recordingObjectUrl;
+        video.style.maxWidth = "100%";
+        video.style.maxHeight = "420px";
+        video.style.border = "1px solid #1f2a3a";
+        video.style.borderRadius = "10px";
+        recordingWrap.appendChild(video);
+        if (recordingCreatedAt) {
+            const meta = document.createElement("div");
+            meta.className = "muted small";
+            meta.textContent = `Recorded at ${new Date(recordingCreatedAt).toISOString()}`;
+            meta.style.marginTop = "6px";
+            recordingWrap.appendChild(meta);
+        }
+        if (!clipWrap)
+            return;
+        if (clipObjectUrls.length) {
+            clipObjectUrls.forEach((u) => URL.revokeObjectURL(u));
+            clipObjectUrls = [];
+        }
+        if (!recordingClips.length) {
+            clipWrap.textContent = "No error clips";
+            return;
+        }
+        const clipItems = recordingClips.map((c, i) => {
+            const url = c.url || "";
+            const code = c.statusCode ?? "-";
+            const at = c.at ? new Date(c.at).toISOString() : "-";
+            const clipUrl = URL.createObjectURL(c.blob);
+            clipObjectUrls.push(clipUrl);
+            return `
+        <div class="clip-card">
+          <video controls src="${escapeHtml(clipUrl)}" style="width:100%; max-height:220px; border-radius:10px; border:1px solid #1f2a3a;"></video>
+          <div class="clip-meta">#${i + 1} · ${escapeHtml(String(code))} · ${escapeHtml(at)}</div>
+          <div class="clip-url">${escapeHtml(url)}</div>
+        </div>
+      `;
+        }).join("");
+        clipWrap.innerHTML = `<div class="clip-grid">${clipItems}</div>`;
     }
     // ---------- Auto load from extension ----------
     function base64UrlToBytes(b64url) {
@@ -994,37 +1221,6 @@
         catch {
             return null;
         }
-    }
-    function normalizeBaseUrl(value) {
-        const raw = String(value || "").trim();
-        if (!raw)
-            return "";
-        return raw.endsWith("/") ? raw.slice(0, -1) : raw;
-    }
-    async function fetchShareById(id) {
-        const baseUrl = normalizeBaseUrl(SERVER_BASE_URL);
-        if (!baseUrl) {
-            return { ok: false, error: "missing_base_url" };
-        }
-        const res = await fetch(`${baseUrl}/share/${encodeURIComponent(id)}`);
-        if (!res.ok) {
-            if (res.status === 401 || res.status === 403) {
-                showShareFetchError("Access denied. This share may be restricted.");
-            }
-            else if (res.status === 404) {
-                showShareFetchError("Share not found or expired. Ask the sender to re-share.");
-            }
-            else {
-                showShareFetchError(`Failed to fetch share (${res.status}).`);
-            }
-            return { ok: false, error: `http_${res.status}` };
-        }
-        const data = await res.json().catch(() => null);
-        if (!data)
-            return { ok: false, error: "invalid_json" };
-        if (data.payload)
-            return { ok: true, data: data.payload };
-        return { ok: true, data };
     }
     function parseOptionalNumber(raw) {
         const t = String(raw || "").trim();
@@ -1100,12 +1296,15 @@
                 }
                 if (res?.ok && res.data) {
                     session = res.data;
-                    resetToggles();
-                    resetFilters();
-                    clearNetDetail();
-                    clearHilite();
-                    renderAll();
-                    resolve(true);
+                    loadRecordingForTab(tabId).then(() => {
+                        resetToggles();
+                        resetFilters();
+                        clearNetDetail();
+                        clearHilite();
+                        renderAll();
+                        resolve(true);
+                    });
+                    return;
                 }
                 else {
                     resolve(false);
@@ -1124,4 +1323,12 @@
         if (!loaded)
             await loadFromHashIfPossible();
     })();
+    window.addEventListener("beforeunload", () => {
+        if (recordingObjectUrl)
+            URL.revokeObjectURL(recordingObjectUrl);
+        if (clipObjectUrls.length) {
+            clipObjectUrls.forEach((u) => URL.revokeObjectURL(u));
+            clipObjectUrls = [];
+        }
+    });
 })();

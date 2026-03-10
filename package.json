@@ -1,26 +1,22 @@
 {
-  "name": "my-web-debugger",
+  "name": "web-debugger-pw-runner",
   "version": "0.1.0",
   "private": true,
-  "description": "Chrome extension for network/console debugging with automated tests.",
+  "description": "Playwright runner that drives Chrome with my-web-debugger extension and consumes Excel test cases.",
   "scripts": {
-    "build": "tsc && node scripts/copy-static.mjs",
-    "build:watch": "tsc -w",
-    "copy:watch": "node scripts/watch-static.mjs",
-    "dev": "node scripts/dev.mjs",
-    "build:public": "npm run build && node scripts/copy-public-viewer.mjs",
-    "copy:static": "node scripts/copy-static.mjs",
-    "test": "npm run build && npm run test:unit",
-    "test:unit": "npm run build && vitest run tests/unit",
-    "test:e2e": "npm run build && playwright test",
-    "test:all": "npm run test:unit && npm run test:e2e"
+    "run": "tsx src/runner.ts",
+    "run:headed": "HEADLESS=false tsx src/runner.ts",
+    "pw:install": "playwright install chromium",
+    "pw:ui": "playwright test --ui",
+    "pw:codegen": "playwright codegen"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.286",
-    "@types/node": "^24.3.0",
     "@playwright/test": "^1.54.2",
-    "jsdom": "^26.1.0",
-    "typescript": "^5.9.2",
-    "vitest": "^2.1.8"
+    "@types/node": "^24.3.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.2"
   }
 }

@@ -6,6 +6,15 @@
   let recordingMime: string | null = null;
   let recordingCreatedAt: number | null = null;
   let recordingObjectUrl: string | null = null;
+  let clipObjectUrls: string[] = [];
+  let recordingClips: {
+    blob: Blob;
+    mime: string;
+    createdAt: number | null;
+    statusCode?: number | null;
+    url?: string | null;
+    at?: number | null;
+  }[] = [];
 
   const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -38,7 +47,17 @@
   const timelineLegend = el<HTMLElement>("timelineLegend");
   const screenshotWrap = el<HTMLElement>("screenshotWrap");
   const recordingWrap = el<HTMLElement>("recordingWrap");
+  const clipWrap = el<HTMLElement>("clipWrap");
   const kpisWrap = el<HTMLElement>("kpis");
+  const shotModal = el<HTMLElement>("shotModal");
+  const shotModalImg = el<HTMLImageElement>("shotModalImg");
+  const shotModalMeta = el<HTMLElement>("shotModalMeta");
+  const shotModalClose = el<HTMLButtonElement>("shotModalClose");
+  const shotPrev = el<HTMLButtonElement>("shotPrev");
+  const shotNext = el<HTMLButtonElement>("shotNext");
+
+  let shotItems: { src: string; meta: string }[] = [];
+  let shotIndex = -1;
 
   // Toggles
   const SLOW_THRESHOLD_MS = 1000;
@@ -74,6 +93,46 @@
     toastEl.textContent = message;
     toastEl.classList.remove("hidden");
     setTimeout(() => toastEl.classList.add("hidden"), 2500);
+  }
+
+  function openShotModalAt(index: number) {
+    if (!shotItems.length) return;
+    if (!shotModal || !shotModalImg || !shotModalMeta) return;
+    const safeIndex = ((index % shotItems.length) + shotItems.length) % shotItems.length;
+    const item = shotItems[safeIndex];
+    shotIndex = safeIndex;
+    shotModalImg.src = item.src;
+    shotModalMeta.textContent = item.meta || "";
+    shotModal.classList.add("open");
+    if (shotPrev) shotPrev.disabled = shotItems.length <= 1;
+    if (shotNext) shotNext.disabled = shotItems.length <= 1;
+  }
+
+  function openShotModal(src: string, meta: string) {
+    if (!shotItems.length) shotItems = [{ src, meta }];
+    const idx = shotItems.findIndex((x) => x.src === src && x.meta === meta);
+    openShotModalAt(idx >= 0 ? idx : 0);
+  }
+
+  function stepShot(delta: number) {
+    if (!shotItems.length) return;
+    openShotModalAt(shotIndex + delta);
+  }
+
+  function isModalOpen() {
+    return !!shotModal?.classList.contains("open");
+  }
+    if (!shotModal || !shotModalImg || !shotModalMeta) return;
+    shotModalImg.src = src;
+    shotModalMeta.textContent = meta || "";
+    shotModal.classList.add("open");
+  }
+
+  function closeShotModal() {
+    if (!shotModal || !shotModalImg || !shotModalMeta) return;
+    shotModal.classList.remove("open");
+    shotModalImg.src = "";
+    shotModalMeta.textContent = "";
   }
 
   // ---------- DnD ----------
@@ -266,12 +325,45 @@
 
   // ESC로 하이라이트 해제
   window.addEventListener("keydown", (e) => {
+    if (isModalOpen()) {
+      if (e.key === "ArrowLeft") return stepShot(-1);
+      if (e.key === "ArrowRight") return stepShot(1);
+    }
     if (e.key === "Escape") {
       clearHilite();
       renderNetworkTable();
       renderConsoleTable();
     }
   });
+
+  if (shotModal) {
+    shotModal.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.id === "shotModal" || target.id === "shotModalClose") {
+        closeShotModal();
+      }
+    });
+  }
+  if (shotModalClose) {
+    shotModalClose.addEventListener("click", () => closeShotModal());
+  }
+  if (shotPrev) {
+    shotPrev.addEventListener("click", () => stepShot(-1));
+  }
+  if (shotNext) {
+    shotNext.addEventListener("click", () => stepShot(1));
+  }
+  if (screenshotWrap) {
+    screenshotWrap.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement | null;
+      const img = target?.closest?.("img[data-shot-src]") as HTMLImageElement | null;
+      if (!img) return;
+      const src = img.getAttribute("data-shot-src") || "";
+      const meta = img.getAttribute("data-shot-meta") || "";
+      if (src) openShotModal(src, meta);
+    });
+  }
 
   function clearHilite() {
     hiliteMode = "none";
@@ -497,19 +589,27 @@
         const code = x?.statusCode ?? "-";
         const url = x?.url || "";
         const src = x?.dataUrl || "";
+        const meta = `#${i + 1} · ${code} · ${ts}`;
         return `
-          <div class="card" style="padding:8px; background:#0b0f14; border:1px solid #1f2a3a;">
-            <div class="muted small" style="margin-bottom:6px;">
-              #${i + 1} · ${escapeHtml(String(code))} · ${escapeHtml(ts)}
-            </div>
-            <div class="muted small" style="margin-bottom:6px; word-break: break-all;">
-              ${escapeHtml(url)}
-            </div>
-            <img src="${escapeHtml(src)}" style="max-width:100%; border:1px solid #1f2a3a; border-radius:10px;" />
+          <div class="shot-item">
+            <div class="shot-meta">${escapeHtml(meta)}</div>
+            <div class="shot-url">${escapeHtml(url)}</div>
+            <img class="shot-thumb"
+                 src="${escapeHtml(src)}"
+                 data-shot-src="${escapeHtml(src)}"
+                 data-shot-meta="${escapeHtml(meta)}"
+                 alt="Error screenshot ${i + 1}" />
           </div>
         `;
       }).join("");
-      screenshotWrap.innerHTML = `<div class="grid2">${items}</div>`;
+      shotItems = list.map((x, i) => {
+        const ts = x?.at ? new Date(x.at).toISOString() : "-";
+        const code = x?.statusCode ?? "-";
+        const src = x?.dataUrl || "";
+        const meta = `#${i + 1} · ${code} · ${ts}`;
+        return { src, meta };
+      }).filter((x) => !!x.src);
+      screenshotWrap.innerHTML = `<div class="shot-grid">${items}</div>`;
       return;
     }
 
@@ -522,9 +622,17 @@
     const at = session.errorScreenshotAt
       ? ` (${new Date(session.errorScreenshotAt).toISOString()})`
       : "";
+    const meta = `${label}${at}`;
+    shotItems = [{ src: s, meta }];
     screenshotWrap.innerHTML = `
-      <div class="muted small" style="margin-bottom:6px;">${escapeHtml(label + at)}</div>
-      <img src="${escapeHtml(s)}" style="max-width:100%; border:1px solid #1f2a3a; border-radius:10px;" />
+      <div class="shot-item">
+        <div class="shot-meta">${escapeHtml(meta)}</div>
+        <img class="shot-thumb"
+             src="${escapeHtml(s)}"
+             data-shot-src="${escapeHtml(s)}"
+             data-shot-meta="${escapeHtml(meta)}"
+             alt="${escapeHtml(label)}" />
+      </div>
     `;
   }
 
@@ -981,15 +1089,22 @@
 
   // ---------- Recording (IndexedDB) ----------
   const RECORDING_DB_NAME = "my-web-debugger";
+  const RECORDING_DB_VERSION = 2;
   const RECORDING_STORE = "recordings";
+  const RECORDING_CLIP_STORE = "recordingClips";
 
   function openRecordingDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(RECORDING_DB_NAME, 1);
+      const req = indexedDB.open(RECORDING_DB_NAME, RECORDING_DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(RECORDING_STORE)) {
           db.createObjectStore(RECORDING_STORE, { keyPath: "tabId" });
+        }
+        if (!db.objectStoreNames.contains(RECORDING_CLIP_STORE)) {
+          const store = db.createObjectStore(RECORDING_CLIP_STORE, { keyPath: "clipId" });
+          store.createIndex("tabId", "tabId", { unique: false });
+          store.createIndex("createdAt", "createdAt", { unique: false });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -1023,8 +1138,47 @@
         recordingMime = data.mime || recordingBlob.type || "video/webm";
         recordingCreatedAt = data.createdAt || null;
       }
+      recordingClips = await loadClipsForTab(tabId);
     } catch {
       // ignore
+    }
+  }
+
+  async function loadClipsForTab(tabId: number) {
+    try {
+      const db = await openRecordingDb();
+      const tx = db.transaction(RECORDING_CLIP_STORE, "readonly");
+      const store = tx.objectStore(RECORDING_CLIP_STORE);
+      const idx = store.index("tabId");
+      const clips: any[] = [];
+      await new Promise<void>((resolve, reject) => {
+        const req = idx.openCursor(IDBKeyRange.only(tabId));
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (cursor) {
+            clips.push(cursor.value);
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        req.onerror = () => reject(req.error);
+      });
+      await txComplete(tx);
+      db.close();
+
+      return clips
+        .map((c) => ({
+          blob: c.blob as Blob,
+          mime: c.mime || "video/webm",
+          createdAt: c.createdAt || null,
+          statusCode: c.statusCode ?? null,
+          url: c.url ?? null,
+          at: c.at ?? null
+        }))
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    } catch {
+      return [];
     }
   }
 
@@ -1032,6 +1186,7 @@
     if (!recordingWrap) return;
     if (!recordingBlob) {
       recordingWrap.textContent = "No recording";
+      if (clipWrap) clipWrap.textContent = "No error clips";
       return;
     }
 
@@ -1058,6 +1213,32 @@
       meta.style.marginTop = "6px";
       recordingWrap.appendChild(meta);
     }
+
+    if (!clipWrap) return;
+    if (clipObjectUrls.length) {
+      clipObjectUrls.forEach((u) => URL.revokeObjectURL(u));
+      clipObjectUrls = [];
+    }
+    if (!recordingClips.length) {
+      clipWrap.textContent = "No error clips";
+      return;
+    }
+
+    const clipItems = recordingClips.map((c, i) => {
+      const url = c.url || "";
+      const code = c.statusCode ?? "-";
+      const at = c.at ? new Date(c.at).toISOString() : "-";
+      const clipUrl = URL.createObjectURL(c.blob);
+      clipObjectUrls.push(clipUrl);
+      return `
+        <div class="clip-card">
+          <video controls src="${escapeHtml(clipUrl)}" style="width:100%; max-height:220px; border-radius:10px; border:1px solid #1f2a3a;"></video>
+          <div class="clip-meta">#${i + 1} · ${escapeHtml(String(code))} · ${escapeHtml(at)}</div>
+          <div class="clip-url">${escapeHtml(url)}</div>
+        </div>
+      `;
+    }).join("");
+    clipWrap.innerHTML = `<div class="clip-grid">${clipItems}</div>`;
   }
 
   // ---------- Auto load from extension ----------
@@ -1194,5 +1375,9 @@
 
   window.addEventListener("beforeunload", () => {
     if (recordingObjectUrl) URL.revokeObjectURL(recordingObjectUrl);
+    if (clipObjectUrls.length) {
+      clipObjectUrls.forEach((u) => URL.revokeObjectURL(u));
+      clipObjectUrls = [];
+    }
   });
 })();

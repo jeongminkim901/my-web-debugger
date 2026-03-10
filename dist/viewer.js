@@ -1,12 +1,16 @@
 // viewer.js (Step 3-1 refined: tighter time window + same-origin constraint)
 (() => {
     let session = null;
+    let recordingBlob = null;
+    let recordingMime = null;
+    let recordingCreatedAt = null;
+    let recordingObjectUrl = null;
+    let clipObjectUrls = [];
+    let recordingClips = [];
     const el = (id) => document.getElementById(id);
     const drop = el("drop");
     const fileInput = el("file");
     const content = el("content");
-    const SERVER_BASE_URL = "http://192.168.20.112";
-    const toastEl = el("toast");
     // Controls
     const netSearch = el("netSearch");
     const hostFilter = el("hostFilter");
@@ -17,8 +21,6 @@
     const durMax = el("durMax");
     const conSearch = el("conSearch");
     const levelFilter = el("levelFilter");
-    const wsSearch = el("wsSearch");
-    const wsDirFilter = el("wsDirFilter");
     // Meta / extra
     const metaNote = el("metaNote");
     const metaTags = el("metaTags");
@@ -37,6 +39,8 @@
     const shotNext = el("shotNext");
     let shotItems = [];
     let shotIndex = -1;
+    const recordingWrap = el("recordingWrap");
+    const clipWrap = el("clipWrap");
     // Toggles
     const SLOW_THRESHOLD_MS = 1000;
     // ✅ 너무 넓게 걸리는 문제 해결: 기본 3초 → 1.2초
@@ -59,16 +63,6 @@
     let hiliteMode = "none"; // "none" | "fromConsole" | "fromNetwork"
     let hiliteCenterTs = null;
     let selectedConsoleKey = null;
-    function showToast(message) {
-        if (!toastEl)
-            return;
-        toastEl.textContent = message;
-        toastEl.classList.remove("hidden");
-        setTimeout(() => toastEl.classList.add("hidden"), 2500);
-    }
-    function showShareFetchError(message) {
-        showToast(message);
-    }
     // ---------- DnD ----------
     drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag"); });
     drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
@@ -127,10 +121,6 @@
             conSearch.value = "";
         if (levelFilter)
             levelFilter.value = "all";
-        if (wsSearch)
-            wsSearch.value = "";
-        if (wsDirFilter)
-            wsDirFilter.value = "all";
     }
     function syncToggleUI() {
         if (toggleSlowBtn) {
@@ -151,9 +141,7 @@
         }
     }
     // Re-render on control changes
-    const controls = [netSearch, hostFilter, statusFilter, methodFilter, sortBy, durMin, durMax, conSearch, levelFilter, wsSearch, wsDirFilter]
-        .filter(Boolean);
-    controls.forEach((ctrl) => {
+    [netSearch, hostFilter, statusFilter, methodFilter, sortBy, durMin, durMax, conSearch, levelFilter].forEach(ctrl => {
         ctrl.addEventListener("input", () => { renderTables(); });
         ctrl.addEventListener("change", () => { renderTables(); });
     });
@@ -387,13 +375,13 @@
         renderErrorSummary();
         renderTimeline();
         renderScreenshot();
+        renderRecording();
     }
     function renderTables() {
         if (!session)
             return;
         renderNetworkTable();
         renderConsoleTable();
-        renderWebsocketTable();
     }
     function renderErrorSummary() {
         if (!session || !errorSummaryStats || !errorSummaryList)
@@ -515,12 +503,46 @@
     function renderScreenshot() {
         if (!session || !screenshotWrap)
             return;
-        const s = session.screenshot;
+        const list = Array.isArray(session.errorScreenshots) ? session.errorScreenshots : [];
+        if (list.length) {
+            const items = list.map((x, i) => {
+                const ts = x?.at ? new Date(x.at).toISOString() : "-";
+                const code = x?.statusCode ?? "-";
+                const url = x?.url || "";
+                const src = x?.dataUrl || "";
+                const meta = `#${i + 1} · ${code} · ${ts}`;
+                return `
+          <div class="shot-item">
+            <div class="shot-meta">${escapeHtml(meta)}</div>
+            <div class="shot-url">${escapeHtml(url)}</div>
+            <img class="shot-thumb"
+                 src="${escapeHtml(src)}"
+                 data-shot-src="${escapeHtml(src)}"
+                 data-shot-meta="${escapeHtml(meta)}"
+                 alt="Error screenshot ${i + 1}" />
+          </div>
+        `;
+            }).join("");
+            shotItems = list.map((x, i) => {
+                const ts = x?.at ? new Date(x.at).toISOString() : "-";
+                const code = x?.statusCode ?? "-";
+                const src = x?.dataUrl || "";
+                const meta = `#${i + 1} 쨌 ${code} 쨌 ${ts}`;
+                return { src, meta };
+            }).filter((x) => !!x.src);
+            screenshotWrap.innerHTML = `<div class="shot-grid">${items}</div>`;
+            return;
+        }
+        const s = session.errorScreenshot || session.screenshot;
         if (!s) {
             screenshotWrap.textContent = "No screenshot";
             return;
         }
-        const meta = "Screenshot";
+        const label = session.errorScreenshot ? "Error screenshot" : "Screenshot";
+        const at = session.errorScreenshotAt
+            ? ` (${new Date(session.errorScreenshotAt).toISOString()})`
+            : "";
+        const meta = `${label}${at}`;
         shotItems = [{ src: s, meta }];
         screenshotWrap.innerHTML = `
       <div class="shot-item">
@@ -529,7 +551,7 @@
              src="${escapeHtml(s)}"
              data-shot-src="${escapeHtml(s)}"
              data-shot-meta="${escapeHtml(meta)}"
-             alt="${escapeHtml(meta)}" />
+             alt="${escapeHtml(label)}" />
       </div>
     `;
     }
@@ -865,55 +887,6 @@
       </table>
     `;
     }
-    // ---------- WebSocket ----------
-    function formatWsPayload(payload) {
-        if (payload === null || payload === undefined)
-            return "-";
-        const text = String(payload);
-        if (text.length <= 200)
-            return escapeHtml(text);
-        return `${escapeHtml(text.slice(0, 200))}...`;
-    }
-    function renderWebsocketTable() {
-        const items = Array.isArray(session.websockets) ? session.websockets : [];
-        const q = (wsSearch?.value || "").trim().toLowerCase();
-        const dir = wsDirFilter?.value || "all";
-        const filtered = items.filter((x) => {
-            const hay = `${x.url || ""} ${x.payload || ""}`.toLowerCase();
-            const okQuery = q ? hay.includes(q) : true;
-            const okDir = (dir === "all") ? true : (String(x.direction || "") === dir);
-            return okQuery && okDir;
-        });
-        el("wsCount").textContent = `${filtered.length} / ${items.length}`;
-        const rows = filtered.map((x) => {
-            const timeIso = x.timestamp ? new Date(x.timestamp).toISOString() : "-";
-            return `
-        <tr>
-          <td class="mono small">${escapeHtml(String(x.direction || "-"))}</td>
-          <td class="mono small">${escapeHtml(String(x.opcode ?? "-"))}</td>
-          <td class="mono small" title="${escapeHtml(x.url || "")}">${escapeHtml(x.url || "")}</td>
-          <td class="mono small" title="${escapeHtml(String(x.payload || ""))}">${formatWsPayload(x.payload)}</td>
-          <td class="mono small">${escapeHtml(timeIso)}</td>
-        </tr>
-      `;
-        }).join("");
-        el("websockets").innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>Dir</th>
-            <th>Opcode</th>
-            <th>URL</th>
-            <th>Payload</th>
-            <th>Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows || `<tr><td colspan="5" class="muted">No websocket frames</td></tr>`}
-        </tbody>
-      </table>
-    `;
-    }
     function makeConsoleKey(x) {
         const ts = x.timestamp ?? 0;
         const lvl = x.level ?? "";
@@ -951,6 +924,154 @@
         return String(s).replace(/[&<>"']/g, (c) => ({
             "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
         }[c]));
+    }
+    // ---------- Recording (IndexedDB) ----------
+    const RECORDING_DB_NAME = "my-web-debugger";
+    const RECORDING_DB_VERSION = 2;
+    const RECORDING_STORE = "recordings";
+    const RECORDING_CLIP_STORE = "recordingClips";
+    function openRecordingDb() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(RECORDING_DB_NAME, RECORDING_DB_VERSION);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(RECORDING_STORE)) {
+                    db.createObjectStore(RECORDING_STORE, { keyPath: "tabId" });
+                }
+                if (!db.objectStoreNames.contains(RECORDING_CLIP_STORE)) {
+                    const store = db.createObjectStore(RECORDING_CLIP_STORE, { keyPath: "clipId" });
+                    store.createIndex("tabId", "tabId", { unique: false });
+                    store.createIndex("createdAt", "createdAt", { unique: false });
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    function txComplete(tx) {
+        return new Promise((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+    }
+    async function loadRecordingForTab(tabId) {
+        if (!tabId || !Number.isFinite(tabId))
+            return;
+        try {
+            const db = await openRecordingDb();
+            const tx = db.transaction(RECORDING_STORE, "readonly");
+            const req = tx.objectStore(RECORDING_STORE).get(tabId);
+            const data = await new Promise((resolve, reject) => {
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+            await txComplete(tx);
+            db.close();
+            if (data?.blob) {
+                recordingBlob = data.blob;
+                recordingMime = data.mime || recordingBlob.type || "video/webm";
+                recordingCreatedAt = data.createdAt || null;
+            }
+            recordingClips = await loadClipsForTab(tabId);
+        }
+        catch {
+            // ignore
+        }
+    }
+    async function loadClipsForTab(tabId) {
+        try {
+            const db = await openRecordingDb();
+            const tx = db.transaction(RECORDING_CLIP_STORE, "readonly");
+            const store = tx.objectStore(RECORDING_CLIP_STORE);
+            const idx = store.index("tabId");
+            const clips = [];
+            await new Promise((resolve, reject) => {
+                const req = idx.openCursor(IDBKeyRange.only(tabId));
+                req.onsuccess = () => {
+                    const cursor = req.result;
+                    if (cursor) {
+                        clips.push(cursor.value);
+                        cursor.continue();
+                    }
+                    else {
+                        resolve();
+                    }
+                };
+                req.onerror = () => reject(req.error);
+            });
+            await txComplete(tx);
+            db.close();
+            return clips
+                .map((c) => ({
+                blob: c.blob,
+                mime: c.mime || "video/webm",
+                createdAt: c.createdAt || null,
+                statusCode: c.statusCode ?? null,
+                url: c.url ?? null,
+                at: c.at ?? null
+            }))
+                .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        }
+        catch {
+            return [];
+        }
+    }
+    function renderRecording() {
+        if (!recordingWrap)
+            return;
+        if (!recordingBlob) {
+            recordingWrap.textContent = "No recording";
+            if (clipWrap)
+                clipWrap.textContent = "No error clips";
+            return;
+        }
+        if (recordingObjectUrl) {
+            URL.revokeObjectURL(recordingObjectUrl);
+            recordingObjectUrl = null;
+        }
+        recordingObjectUrl = URL.createObjectURL(recordingBlob);
+        recordingWrap.innerHTML = "";
+        const video = document.createElement("video");
+        video.controls = true;
+        video.src = recordingObjectUrl;
+        video.style.maxWidth = "100%";
+        video.style.maxHeight = "420px";
+        video.style.border = "1px solid #1f2a3a";
+        video.style.borderRadius = "10px";
+        recordingWrap.appendChild(video);
+        if (recordingCreatedAt) {
+            const meta = document.createElement("div");
+            meta.className = "muted small";
+            meta.textContent = `Recorded at ${new Date(recordingCreatedAt).toISOString()}`;
+            meta.style.marginTop = "6px";
+            recordingWrap.appendChild(meta);
+        }
+        if (!clipWrap)
+            return;
+        if (clipObjectUrls.length) {
+            clipObjectUrls.forEach((u) => URL.revokeObjectURL(u));
+            clipObjectUrls = [];
+        }
+        if (!recordingClips.length) {
+            clipWrap.textContent = "No error clips";
+            return;
+        }
+        const clipItems = recordingClips.map((c, i) => {
+            const url = c.url || "";
+            const code = c.statusCode ?? "-";
+            const at = c.at ? new Date(c.at).toISOString() : "-";
+            const clipUrl = URL.createObjectURL(c.blob);
+            clipObjectUrls.push(clipUrl);
+            return `
+        <div class="clip-card">
+          <video controls src="${escapeHtml(clipUrl)}" style="width:100%; max-height:220px; border-radius:10px; border:1px solid #1f2a3a;"></video>
+          <div class="clip-meta">#${i + 1} · ${escapeHtml(String(code))} · ${escapeHtml(at)}</div>
+          <div class="clip-url">${escapeHtml(url)}</div>
+        </div>
+      `;
+        }).join("");
+        clipWrap.innerHTML = `<div class="clip-grid">${clipItems}</div>`;
     }
     // ---------- Auto load from extension ----------
     function base64UrlToBytes(b64url) {
@@ -995,37 +1116,6 @@
             return null;
         }
     }
-    function normalizeBaseUrl(value) {
-        const raw = String(value || "").trim();
-        if (!raw)
-            return "";
-        return raw.endsWith("/") ? raw.slice(0, -1) : raw;
-    }
-    async function fetchShareById(id) {
-        const baseUrl = normalizeBaseUrl(SERVER_BASE_URL);
-        if (!baseUrl) {
-            return { ok: false, error: "missing_base_url" };
-        }
-        const res = await fetch(`${baseUrl}/share/${encodeURIComponent(id)}`);
-        if (!res.ok) {
-            if (res.status === 401 || res.status === 403) {
-                showShareFetchError("Access denied. This share may be restricted.");
-            }
-            else if (res.status === 404) {
-                showShareFetchError("Share not found or expired. Ask the sender to re-share.");
-            }
-            else {
-                showShareFetchError(`Failed to fetch share (${res.status}).`);
-            }
-            return { ok: false, error: `http_${res.status}` };
-        }
-        const data = await res.json().catch(() => null);
-        if (!data)
-            return { ok: false, error: "invalid_json" };
-        if (data.payload)
-            return { ok: true, data: data.payload };
-        return { ok: true, data };
-    }
     function parseOptionalNumber(raw) {
         const t = String(raw || "").trim();
         if (!t)
@@ -1045,14 +1135,9 @@
         if (!loc)
             return false;
         const hash = loc.hash || "";
-        if (hash.startsWith("#id=")) {
-            showToast("Server sharing is disabled.");
-            return false;
-        }
         if (!hash.startsWith("#data="))
             return false;
         const payload = hash.slice("#data=".length);
-        showToast("Loading URL data...");
         const json = await decodeUrlPayload(payload);
         if (!json) {
             try {
@@ -1100,12 +1185,15 @@
                 }
                 if (res?.ok && res.data) {
                     session = res.data;
-                    resetToggles();
-                    resetFilters();
-                    clearNetDetail();
-                    clearHilite();
-                    renderAll();
-                    resolve(true);
+                    loadRecordingForTab(tabId).then(() => {
+                        resetToggles();
+                        resetFilters();
+                        clearNetDetail();
+                        clearHilite();
+                        renderAll();
+                        resolve(true);
+                    });
+                    return;
                 }
                 else {
                     resolve(false);
@@ -1124,4 +1212,12 @@
         if (!loaded)
             await loadFromHashIfPossible();
     })();
+    window.addEventListener("beforeunload", () => {
+        if (recordingObjectUrl)
+            URL.revokeObjectURL(recordingObjectUrl);
+        if (clipObjectUrls.length) {
+            clipObjectUrls.forEach((u) => URL.revokeObjectURL(u));
+            clipObjectUrls = [];
+        }
+    });
 })();
