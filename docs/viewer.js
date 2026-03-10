@@ -24,6 +24,7 @@
     const metaTags = el("metaTags");
     const errorSummaryStats = el("errorSummaryStats");
     const errorSummaryList = el("errorSummaryList");
+    const kpisWrap = el("kpis");
     const timelineEl = el("timeline");
     const timelineMeta = el("timelineMeta");
     const timelineAxis = el("timelineAxis");
@@ -163,6 +164,26 @@
             slowOnly = !slowOnly;
             syncToggleUI();
             renderNetworkTable();
+        });
+    }
+    // KPI click -> apply status filter
+    if (kpisWrap) {
+        kpisWrap.addEventListener("click", (e) => {
+            const target = e.target;
+            const card = target?.closest?.("[data-kpi]");
+            if (!card || !statusFilter)
+                return;
+            const key = card.getAttribute("data-kpi");
+            if (!key)
+                return;
+            if (key === "total") {
+                statusFilter.value = "all";
+            }
+            else {
+                statusFilter.value = key;
+            }
+            renderNetworkTable();
+            syncKpiActive();
         });
     }
     if (toggleNetErrorsBtn) {
@@ -356,12 +377,13 @@
         const total = s.totalRequests ?? (session.network?.length || 0);
         const by = s.byStatusGroup || {};
         el("kpis").innerHTML = `
-      ${kpi("Total Requests", total)}
-      ${kpi("2xx", by["2xx"] || 0)}
-      ${kpi("3xx", by["3xx"] || 0)}
-      ${kpi("4xx", by["4xx"] || 0)}
-      ${kpi("5xx", by["5xx"] || 0)}
+      ${kpi("Total Requests", total, "total")}
+      ${kpi("2xx", by["2xx"] || 0, "2xx")}
+      ${kpi("3xx", by["3xx"] || 0, "3xx")}
+      ${kpi("4xx", by["4xx"] || 0, "4xx")}
+      ${kpi("5xx", by["5xx"] || 0, "5xx")}
     `;
+        syncKpiActive();
         const slow = (s.slowestTop5 || []).map(x => `
       <div class="row" style="padding:8px 0; border-bottom:1px solid #1f2a3a;">
         <span class="pill mono">${escapeHtml(x.method || "-")}</span>
@@ -927,13 +949,30 @@
         return `${ts}|${lvl}|${msg.slice(0, 80)}`;
     }
     // ---------- Helpers ----------
-    function kpi(label, value) {
+    function kpi(label, value, key) {
+        const activeKey = getActiveKpiKey();
+        const isActive = key && activeKey === key;
         return `
-      <div class="card kpi">
+      <div class="card kpi kpi-filter${isActive ? " kpi-active" : ""}" data-kpi="${escapeHtml(String(key || ""))}" title="Click to filter network">
         <div class="muted">${escapeHtml(label)}</div>
         <div class="v">${escapeHtml(String(value))}</div>
       </div>
     `;
+    }
+    function getActiveKpiKey() {
+        if (!statusFilter)
+            return "total";
+        const v = statusFilter.value || "all";
+        return v === "all" ? "total" : v;
+    }
+    function syncKpiActive() {
+        if (!kpisWrap)
+            return;
+        const activeKey = getActiveKpiKey();
+        kpisWrap.querySelectorAll("[data-kpi]").forEach((el) => {
+            const key = el.getAttribute("data-kpi");
+            el.classList.toggle("kpi-active", key === activeKey);
+        });
     }
     function prettyArgs(args) {
         try {
