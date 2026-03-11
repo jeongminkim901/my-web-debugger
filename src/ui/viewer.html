@@ -87,7 +87,9 @@
     }
 
     .timeline { position: relative; height: 140px; background: #0f1622; border: 1px solid #1f2a3a; border-radius: 12px; overflow: hidden; }
-    .timeline-bar { position: absolute; height: 18px; border-radius: 6px; background: rgba(125, 211, 252, 0.35); border: 1px solid rgba(125, 211, 252, 0.6); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 6px; font-size: 11px; line-height: 18px; color: #e6edf3; }
+    .timeline-bar { position: absolute; height: 18px; border-radius: 6px; background: rgba(125, 211, 252, 0.35); border: 1px solid rgba(125, 211, 252, 0.6); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 6px; font-size: 11px; line-height: 18px; color: #e6edf3; cursor: pointer; }
+    .timeline-bar.tiny { font-size: 10px; padding: 0 4px; }
+    .timeline-bar:hover { box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.5), 0 0 10px rgba(125, 211, 252, 0.25); }
     .timeline-bar.err { background: rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.6); }
     .timeline-bar.warn { background: rgba(245, 158, 11, 0.20); border-color: rgba(245, 158, 11, 0.6); }
     .timeline-grid {

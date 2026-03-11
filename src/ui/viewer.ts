@@ -88,6 +88,7 @@
   let hiliteMode = "none"; // "none" | "fromConsole" | "fromNetwork"
   let hiliteCenterTs = null;
   let selectedConsoleKey = null;
+  let timelineNetMap = new Map(); // id -> item
 
   function showToast(message: string) {
     if (!toastEl) return;
@@ -355,6 +356,33 @@
   if (shotNext) {
     shotNext.addEventListener("click", () => stepShot(1));
   }
+
+  if (timelineEl) {
+    timelineEl.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement | null;
+      const bar = target?.closest?.(".timeline-bar") as HTMLElement | null;
+      if (!bar) return;
+      const id = bar.getAttribute("data-net-id");
+      if (!id) return;
+      const item = timelineNetMap.get(id);
+      if (!item) return;
+
+      selectedNetId = id;
+      renderNetDetail(item);
+
+      const center = (typeof item.endedAt === "number") ? item.endedAt
+                   : (typeof item.startedAt === "number") ? item.startedAt
+                   : null;
+      if (typeof center === "number") {
+        hiliteMode = "fromNetwork";
+        hiliteCenterTs = center;
+        selectedConsoleKey = null;
+        hiliteOrigin = getOrigin(item.pageUrl || item.url || null);
+        renderConsoleTable();
+        renderNetworkTable();
+      }
+    });
+  }
   if (screenshotWrap) {
     screenshotWrap.addEventListener("click", (e) => {
       const target = e.target as HTMLElement | null;
@@ -549,6 +577,7 @@
     const range = Math.max(1, maxT - minT);
 
     timelineEl.innerHTML = "";
+    timelineNetMap = new Map();
     timelineAxis.innerHTML = `
       <span>${escapeHtml(new Date(minT).toISOString())}</span>
       <span>${escapeHtml(new Date(minT + Math.floor(range / 2)).toISOString())}</span>
@@ -575,12 +604,24 @@
       const width = Math.max(1, ((e - s) / range) * 100);
       const bar = document.createElement("div");
       const code = x.statusCode;
+      const id = String(x.id ?? `${x.method || "GET"}:${x.url || ""}:${x.startedAt || ""}`);
+      timelineNetMap.set(id, x);
       bar.className = "timeline-bar" + ((typeof code === "number" && code >= 400) ? " err" : (x.durationMs >= SLOW_THRESHOLD_MS ? " warn" : ""));
       bar.style.left = `${left}%`;
       bar.style.width = `${width}%`;
       bar.style.top = `${(i % 7) * 20 + 6}px`;
       bar.title = `${x.method || ""} ${x.shortUrl || x.url || ""}`;
-      bar.textContent = `${x.method || "-"} ${x.statusCode ?? "-"}`;
+      const method = x.method || "-";
+      if (width < 2) {
+        bar.classList.add("tiny");
+        bar.textContent = method.slice(0, 1);
+      } else if (width < 4) {
+        bar.classList.add("tiny");
+        bar.textContent = method.slice(0, 3);
+      } else {
+        bar.textContent = `${method} ${x.statusCode ?? "-"}`;
+      }
+      bar.setAttribute("data-net-id", id);
       timelineEl.appendChild(bar);
     });
   }
